@@ -1,0 +1,22 @@
+# Build artifacts
+.build/
+DerivedData/
+*.xcuserdata
+xcuserdata/
+
+# OS files
+.DS_Store
+*.swp
+*~
+
+# Xcode
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+!default.pbxuser
+!default.mode1v3
+!default.mode2v3
+!default.perspectivev3
