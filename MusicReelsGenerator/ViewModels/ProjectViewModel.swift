@@ -78,6 +78,7 @@ class ProjectViewModel: ObservableObject {
 
             project.sourceVideoPath = url.path
             project.videoMetadata = metadata
+            project.trimSettings = .fullDuration(metadata.duration)
             project.touch()
             isDirty = true
 
@@ -98,13 +99,21 @@ class ProjectViewModel: ObservableObject {
         player = AVPlayer(playerItem: playerItem)
         duration = project.videoMetadata.duration
 
-        // Periodic time observer
+        // Periodic time observer — also enforces trim end
         let interval = CMTime(seconds: 0.05, preferredTimescale: 600)
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self else { return }
             let t = CMTimeGetSeconds(time)
             Task { @MainActor [weak self] in
-                self?.currentTime = t
+                guard let self else { return }
+                self.currentTime = t
+                // Stop at trim end
+                let trimEnd = self.project.trimSettings.endTime
+                if trimEnd > 0 && t >= trimEnd && self.isPlaying {
+                    self.player?.pause()
+                    self.isPlaying = false
+                    self.seek(to: trimEnd)
+                }
             }
         }
     }
@@ -116,6 +125,14 @@ class ProjectViewModel: ObservableObject {
         if isPlaying {
             player.pause()
         } else {
+            // Jump to trim start if before it
+            let trimStart = project.trimSettings.startTime
+            let trimEnd = project.trimSettings.endTime
+            if currentTime < trimStart {
+                seek(to: trimStart)
+            } else if trimEnd > 0 && currentTime >= trimEnd {
+                seek(to: trimStart)
+            }
             player.play()
         }
         isPlaying = !isPlaying
@@ -219,6 +236,54 @@ class ProjectViewModel: ObservableObject {
         project.lyricBlocks[idx].isAnchor.toggle()
         project.touch()
         isDirty = true
+    }
+
+    // MARK: - Trim Controls
+
+    func setTrimStart(to time: Double) {
+        let clamped = max(0, min(time, project.trimSettings.endTime - 0.1))
+        project.trimSettings.startTime = clamped
+        project.touch()
+        isDirty = true
+    }
+
+    func setTrimEnd(to time: Double) {
+        let clamped = max(project.trimSettings.startTime + 0.1, min(time, duration))
+        project.trimSettings.endTime = clamped
+        project.touch()
+        isDirty = true
+    }
+
+    func setTrimStartToCurrent() {
+        setTrimStart(to: currentTime)
+    }
+
+    func setTrimEndToCurrent() {
+        setTrimEnd(to: currentTime)
+    }
+
+    func resetTrim() {
+        project.trimSettings.reset(sourceDuration: duration)
+        project.touch()
+        isDirty = true
+    }
+
+    func nudgeTrimStart(by delta: Double) {
+        setTrimStart(to: project.trimSettings.startTime + delta)
+    }
+
+    func nudgeTrimEnd(by delta: Double) {
+        setTrimEnd(to: project.trimSettings.endTime + delta)
+    }
+
+    /// Trimmed duration for display
+    var trimmedDuration: Double {
+        project.trimSettings.duration
+    }
+
+    /// Whether trim is actively cutting the video
+    var isTrimActive: Bool {
+        project.trimSettings.isActive(sourceDuration: duration)
     }
 
     // MARK: - Auto Alignment

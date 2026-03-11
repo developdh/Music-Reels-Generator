@@ -58,11 +58,16 @@ class ExportService {
         onProgress(.preparing)
 
         let crop = project.cropSettings
+        var trim = project.trimSettings
+        // Safety: if trim end is 0 or invalid, use full duration
+        if trim.endTime <= trim.startTime {
+            trim = .fullDuration(project.videoMetadata.duration)
+        }
         let outW = crop.outputWidth
         let outH = crop.outputHeight
         let meta = project.videoMetadata
 
-        // --- Step 1: FFmpeg crop/scale → intermediate file ---
+        // --- Step 1: FFmpeg trim + crop/scale → intermediate file ---
         let tempDir = "/tmp/mreels_export"
         try? FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
         let croppedURL = URL(fileURLWithPath: "\(tempDir)/cropped.mp4")
@@ -84,8 +89,12 @@ class ExportService {
 
         let filterChain = "scale=\(evenScaledW):\(evenScaledH),crop=\(outW):\(outH):\(cropX):\(cropY)"
 
-        let ffmpegArgs = [
-            "-i", videoURL.path,
+        // Build FFmpeg args with trim via -ss (seek) and -t (duration)
+        var ffmpegArgs: [String] = []
+        ffmpegArgs += ["-ss", String(format: "%.3f", trim.startTime)]
+        ffmpegArgs += ["-i", videoURL.path]
+        ffmpegArgs += ["-t", String(format: "%.3f", trim.duration)]
+        ffmpegArgs += [
             "-vf", filterChain,
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             "-c:a", "aac", "-b:a", "192k",
@@ -95,7 +104,7 @@ class ExportService {
         ]
 
         onProgress(.exporting(progress: 0.05))
-        print("FFmpeg crop: \(ffmpeg) \(ffmpegArgs.joined(separator: " "))")
+        print("FFmpeg crop+trim: \(ffmpeg) \(ffmpegArgs.joined(separator: " "))")
 
         let cropResult = try await ProcessRunner.run(ffmpeg, arguments: ffmpegArgs)
         guard cropResult.succeeded else {
@@ -105,12 +114,15 @@ class ExportService {
         onProgress(.exporting(progress: 0.4))
 
         // --- Step 2: Burn subtitles frame-by-frame via AVAssetReader/Writer ---
+        // Remap lyric timing: source-absolute → trim-relative (trimStart becomes 0)
+        let exportBlocks = TrimTimingUtility.blocksForExport(timedBlocks, trim: trim)
+
         try? FileManager.default.removeItem(at: outputURL)
 
         try await burnSubtitlesFrameByFrame(
             inputURL: croppedURL,
             outputURL: outputURL,
-            blocks: timedBlocks,
+            blocks: exportBlocks,
             style: project.subtitleStyle,
             outputSize: CGSize(width: outW, height: outH),
             onProgress: { p in

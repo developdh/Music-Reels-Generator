@@ -5,23 +5,49 @@ struct PlaybackControlsView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // Scrubber / timeline
+            // Scrubber / timeline with trim markers
             HStack(spacing: 8) {
                 Text(TimeFormatter.format(vm.currentTime))
                     .font(.caption)
                     .monospacedDigit()
                     .frame(width: 60, alignment: .trailing)
 
-                Slider(value: Binding(
-                    get: { vm.currentTime },
-                    set: { vm.seek(to: $0) }
-                ), in: 0...max(vm.duration, 0.01))
-                .disabled(vm.player == nil)
+                ZStack {
+                    Slider(value: Binding(
+                        get: { vm.currentTime },
+                        set: { vm.seek(to: $0) }
+                    ), in: 0...max(vm.duration, 0.01))
+                    .disabled(vm.player == nil)
 
-                Text(TimeFormatter.format(vm.duration))
-                    .font(.caption)
-                    .monospacedDigit()
-                    .frame(width: 60, alignment: .leading)
+                    // Trim range indicator under the slider
+                    if vm.project.trimSettings.isActive(sourceDuration: vm.duration) {
+                        GeometryReader { geo in
+                            let w = geo.size.width
+                            let dur = max(vm.duration, 0.01)
+                            let startFrac = vm.project.trimSettings.startTime / dur
+                            let endFrac = vm.project.trimSettings.endTime / dur
+
+                            Rectangle()
+                                .fill(Color.accentColor.opacity(0.3))
+                                .frame(width: max(0, w * (endFrac - startFrac)), height: 3)
+                                .offset(x: w * startFrac, y: geo.size.height - 3)
+                        }
+                        .allowsHitTesting(false)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(TimeFormatter.format(vm.duration))
+                        .font(.caption)
+                        .monospacedDigit()
+                    if vm.project.trimSettings.isActive(sourceDuration: vm.duration) {
+                        Text("[\(TimeFormatter.formatMMSS(vm.trimmedDuration))]")
+                            .font(.caption2)
+                            .foregroundColor(.accentColor)
+                            .monospacedDigit()
+                    }
+                }
+                .frame(width: 60, alignment: .leading)
             }
             .padding(.horizontal, 16)
 

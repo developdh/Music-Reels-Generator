@@ -6,6 +6,7 @@ struct InspectorPanelView: View {
 
     enum InspectorTab: String, CaseIterable {
         case block = "Block"
+        case trim = "Trim"
         case crop = "Crop"
         case style = "Style"
         case info = "Info"
@@ -28,6 +29,8 @@ struct InspectorPanelView: View {
                     switch selectedTab {
                     case .block:
                         BlockInspectorView()
+                    case .trim:
+                        TrimInspectorView()
                     case .crop:
                         CropInspectorView()
                     case .style:
@@ -451,6 +454,162 @@ struct InfoInspectorView: View {
                 }
                 .font(.caption)
             }
+        }
+    }
+}
+
+// MARK: - Trim Inspector
+
+struct TrimInspectorView: View {
+    @EnvironmentObject var vm: ProjectViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Trim Settings")
+                .font(.headline)
+
+            if !vm.project.hasVideo {
+                VStack(spacing: 8) {
+                    Image(systemName: "film")
+                        .font(.title)
+                        .foregroundColor(.secondary)
+                    Text("Import a video first")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // Trim Start
+                GroupBox("Trim Start") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(TimeFormatter.format(vm.project.trimSettings.startTime))
+                                .monospacedDigit()
+                                .font(.title3)
+                            Spacer()
+                            Button("Set to Current") {
+                                vm.setTrimStartToCurrent()
+                            }
+                            .controlSize(.small)
+                        }
+
+                        HStack(spacing: 4) {
+                            Button("-1s") { vm.nudgeTrimStart(by: -1) }
+                            Button("-0.1s") { vm.nudgeTrimStart(by: -0.1) }
+                            Button("+0.1s") { vm.nudgeTrimStart(by: 0.1) }
+                            Button("+1s") { vm.nudgeTrimStart(by: 1) }
+                        }
+                        .controlSize(.mini)
+                    }
+                }
+
+                // Trim End
+                GroupBox("Trim End") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(TimeFormatter.format(vm.project.trimSettings.endTime))
+                                .monospacedDigit()
+                                .font(.title3)
+                            Spacer()
+                            Button("Set to Current") {
+                                vm.setTrimEndToCurrent()
+                            }
+                            .controlSize(.small)
+                        }
+
+                        HStack(spacing: 4) {
+                            Button("-1s") { vm.nudgeTrimEnd(by: -1) }
+                            Button("-0.1s") { vm.nudgeTrimEnd(by: -0.1) }
+                            Button("+0.1s") { vm.nudgeTrimEnd(by: 0.1) }
+                            Button("+1s") { vm.nudgeTrimEnd(by: 1) }
+                        }
+                        .controlSize(.mini)
+                    }
+                }
+
+                // Summary
+                GroupBox("Output") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        LabeledContent("Duration") {
+                            Text(TimeFormatter.formatMMSS(vm.trimmedDuration))
+                                .monospacedDigit()
+                        }
+                        LabeledContent("Range") {
+                            Text("\(TimeFormatter.format(vm.project.trimSettings.startTime)) — \(TimeFormatter.format(vm.project.trimSettings.endTime))")
+                                .monospacedDigit()
+                                .font(.caption)
+                        }
+                    }
+                    .font(.caption)
+                }
+
+                // Trim bar visualization
+                TrimBarView()
+                    .frame(height: 32)
+                    .padding(.top, 4)
+
+                // Reset
+                Button("Reset Trim (Full Duration)") {
+                    vm.resetTrim()
+                }
+                .controlSize(.small)
+            }
+        }
+    }
+}
+
+/// A simple visual trim bar showing the selected range
+struct TrimBarView: View {
+    @EnvironmentObject var vm: ProjectViewModel
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let dur = max(vm.duration, 0.01)
+            let startFrac = vm.project.trimSettings.startTime / dur
+            let endFrac = vm.project.trimSettings.endTime / dur
+            let playFrac = vm.currentTime / dur
+
+            ZStack(alignment: .leading) {
+                // Full duration background
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.2))
+
+                // Trimmed-out region (before start)
+                Rectangle()
+                    .fill(Color.black.opacity(0.3))
+                    .frame(width: max(0, w * startFrac))
+
+                // Trimmed-out region (after end)
+                Rectangle()
+                    .fill(Color.black.opacity(0.3))
+                    .frame(width: max(0, w * (1 - endFrac)))
+                    .offset(x: w * endFrac)
+
+                // Active trim region
+                Rectangle()
+                    .fill(Color.accentColor.opacity(0.25))
+                    .frame(width: max(0, w * (endFrac - startFrac)))
+                    .offset(x: w * startFrac)
+
+                // Trim start marker
+                Rectangle()
+                    .fill(Color.green)
+                    .frame(width: 2)
+                    .offset(x: w * startFrac)
+
+                // Trim end marker
+                Rectangle()
+                    .fill(Color.red)
+                    .frame(width: 2)
+                    .offset(x: max(0, w * endFrac - 2))
+
+                // Playhead
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(width: 1.5)
+                    .offset(x: w * playFrac)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 4))
         }
     }
 }
