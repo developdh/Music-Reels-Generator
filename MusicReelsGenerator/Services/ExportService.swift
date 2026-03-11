@@ -220,8 +220,8 @@ class ExportService {
             audioWriterInput = input
         }
 
-        // --- Pre-render subtitle images ---
-        let subtitleImages = prerenderSubtitles(
+        // --- Pre-render subtitle images using shared renderer ---
+        let subtitleImages = SubtitleRenderer.prerenderAll(
             blocks: blocks, style: style, canvasSize: outputSize
         )
 
@@ -306,143 +306,6 @@ class ExportService {
         }
     }
 
-    // MARK: - Pre-render subtitles as CGImage
-
-    private func prerenderSubtitles(
-        blocks: [LyricBlock],
-        style: SubtitleStyle,
-        canvasSize: CGSize
-    ) -> [UUID: CGImage] {
-        var result: [UUID: CGImage] = [:]
-        let width = Int(canvasSize.width)
-        let height = Int(canvasSize.height)
-
-        // Resolve fonts by family name using font descriptors.
-        // NSFont(name:) expects a PostScript or full name, NOT a family name.
-        // The style stores family names (e.g. "Hiragino Sans"), so we must use
-        // NSFontDescriptor to resolve correctly.
-        let fm = NSFontManager.shared
-        var jaFont = resolveFont(family: style.japaneseFontFamily, size: style.japaneseFontSize)
-        jaFont = fm.convert(jaFont, toHaveTrait: .boldFontMask)
-
-        let koFont = resolveFont(family: style.koreanFontFamily, size: style.koreanFontSize)
-
-        let textColor = NSColor(Color(hex: style.textColorHex))
-        let outlineColor = NSColor(Color(hex: style.outlineColorHex))
-
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
-
-        let outlineR = max(style.outlineWidth, 1.0) // outline radius in pixels
-
-        for block in blocks {
-            guard block.hasTimingData else { continue }
-
-            let image = NSImage(size: NSSize(width: width, height: height))
-            image.lockFocus()
-
-            guard NSGraphicsContext.current != nil else {
-                image.unlockFocus()
-                continue
-            }
-
-            let maxTextWidth = canvasSize.width - 60
-
-            // Measure text sizes using fill attrs (no stroke — stroke changes metrics)
-            let jaFillAttrs: [NSAttributedString.Key: Any] = [
-                .font: jaFont,
-                .foregroundColor: textColor,
-                .paragraphStyle: paragraphStyle
-            ]
-            let koFillAttrs: [NSAttributedString.Key: Any] = [
-                .font: koFont,
-                .foregroundColor: textColor,
-                .paragraphStyle: paragraphStyle
-            ]
-
-            let jaStr = NSAttributedString(string: block.japanese, attributes: jaFillAttrs)
-            let koStr = NSAttributedString(string: block.korean, attributes: koFillAttrs)
-
-            let jaSize = jaStr.boundingRect(
-                with: NSSize(width: maxTextWidth, height: 500),
-                options: [.usesLineFragmentOrigin, .usesFontLeading]
-            ).size
-            let koSize = koStr.boundingRect(
-                with: NSSize(width: maxTextWidth, height: 500),
-                options: [.usesLineFragmentOrigin, .usesFontLeading]
-            ).size
-
-            // Y positions (NSImage origin = bottom-left)
-            let koY = style.bottomMargin
-            let jaY = koY + koSize.height + style.lineSpacing
-
-            let koRect = NSRect(
-                x: (canvasSize.width - maxTextWidth) / 2,
-                y: koY,
-                width: maxTextWidth, height: koSize.height + 10
-            )
-            let jaRect = NSRect(
-                x: (canvasSize.width - maxTextWidth) / 2,
-                y: jaY,
-                width: maxTextWidth, height: jaSize.height + 10
-            )
-
-            // --- Outline pass: draw text in outlineColor at offsets around origin ---
-            let outlineJaAttrs: [NSAttributedString.Key: Any] = [
-                .font: jaFont,
-                .foregroundColor: outlineColor,
-                .paragraphStyle: paragraphStyle
-            ]
-            let outlineKoAttrs: [NSAttributedString.Key: Any] = [
-                .font: koFont,
-                .foregroundColor: outlineColor,
-                .paragraphStyle: paragraphStyle
-            ]
-            let outlineJaStr = NSAttributedString(string: block.japanese, attributes: outlineJaAttrs)
-            let outlineKoStr = NSAttributedString(string: block.korean, attributes: outlineKoAttrs)
-
-            let step: CGFloat = max(1.0, outlineR / 3.0)
-            for dx in stride(from: -outlineR, through: outlineR, by: step) {
-                for dy in stride(from: -outlineR, through: outlineR, by: step) {
-                    if dx * dx + dy * dy > outlineR * outlineR { continue }
-                    outlineJaStr.draw(in: jaRect.offsetBy(dx: dx, dy: dy))
-                    outlineKoStr.draw(in: koRect.offsetBy(dx: dx, dy: dy))
-                }
-            }
-
-            // --- Shadow pass ---
-            if style.shadowEnabled {
-                let shadowAttrs: [NSAttributedString.Key: Any] = [
-                    .font: jaFont,
-                    .foregroundColor: NSColor(white: 0, alpha: 0.25),
-                    .paragraphStyle: paragraphStyle
-                ]
-                let shadowKoAttrs: [NSAttributedString.Key: Any] = [
-                    .font: koFont,
-                    .foregroundColor: NSColor(white: 0, alpha: 0.25),
-                    .paragraphStyle: paragraphStyle
-                ]
-                let off: CGFloat = 2
-                NSAttributedString(string: block.japanese, attributes: shadowAttrs)
-                    .draw(in: jaRect.offsetBy(dx: off, dy: -off))
-                NSAttributedString(string: block.korean, attributes: shadowKoAttrs)
-                    .draw(in: koRect.offsetBy(dx: off, dy: -off))
-            }
-
-            // --- Fill pass: draw main text on top ---
-            jaStr.draw(in: jaRect)
-            koStr.draw(in: koRect)
-
-            image.unlockFocus()
-
-            if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                result[block.id] = cgImage
-            }
-        }
-
-        return result
-    }
-
     // MARK: - Composite subtitle image onto video frame
 
     private func drawSubtitle(
@@ -494,31 +357,6 @@ class ExportService {
         CVPixelBufferUnlockBaseAddress(outputBuffer, [])
 
         return outputBuffer
-    }
-
-    // MARK: - Font Resolution
-
-    /// Resolve a font by family name using NSFontDescriptor.
-    /// NSFont(name:) expects a PostScript/full name, not a family name.
-    /// This method correctly resolves family names like "Hiragino Sans".
-    private func resolveFont(family: String, size: Double) -> NSFont {
-        let descriptor = NSFontDescriptor(fontAttributes: [
-            .family: family
-        ])
-        if let font = NSFont(descriptor: descriptor, size: size) {
-            print("[Export Font] Resolved '\(family)' → \(font.fontName) (\(font.familyName ?? "?"))")
-            return font
-        }
-
-        // Fallback: try NSFont(name:) in case family is actually a PostScript name
-        if let font = NSFont(name: family, size: size) {
-            print("[Export Font] Resolved '\(family)' via name → \(font.fontName)")
-            return font
-        }
-
-        // Last resort: system font
-        print("[Export Font] WARNING: Could not resolve '\(family)', falling back to system font")
-        return NSFont.systemFont(ofSize: size)
     }
 
     func cancel() {}

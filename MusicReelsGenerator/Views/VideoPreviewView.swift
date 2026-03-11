@@ -102,13 +102,16 @@ struct CroppedVideoPreview: View {
                         .frame(width: previewSize.width, height: previewSize.height)
                         .clipped()
 
-                    // Subtitle overlay — positioned relative to the 9:16 frame
+                    // Subtitle overlay — rendered at export canvas size, scaled to preview
                     if let block = currentBlock {
                         SubtitleOverlayView(
                             block: block,
                             style: subtitleStyle,
-                            previewHeight: previewSize.height,
-                            outputHeight: CGFloat(cropSettings.outputHeight)
+                            previewSize: previewSize,
+                            canvasSize: CGSize(
+                                width: CGFloat(cropSettings.outputWidth),
+                                height: CGFloat(cropSettings.outputHeight)
+                            )
                         )
                     }
                 }
@@ -158,35 +161,23 @@ struct CroppedVideoPreview: View {
     }
 }
 
+/// Preview subtitle overlay that uses the exact same Core Graphics renderer as export.
+/// Renders at canonical export canvas size, then scales down to preview size.
 struct SubtitleOverlayView: View {
     let block: LyricBlock
     let style: SubtitleStyle
-    let previewHeight: CGFloat
-    let outputHeight: CGFloat
-
-    /// Scale factor from output pixels to preview pixels
-    private var previewScale: CGFloat {
-        previewHeight / outputHeight
-    }
+    let previewSize: CGSize
+    let canvasSize: CGSize
 
     var body: some View {
-        VStack(spacing: style.lineSpacing * previewScale) {
-            Text(block.japanese)
-                .font(.custom(style.japaneseFontFamily, size: style.japaneseFontSize * previewScale))
-                .fontWeight(.bold)
-                .foregroundColor(style.textColor)
-                .shadow(color: style.outlineColor.opacity(0.7), radius: style.outlineWidth * previewScale)
-                .shadow(color: style.outlineColor.opacity(0.4), radius: style.outlineWidth * previewScale * 0.5)
-
-            Text(block.korean)
-                .font(.custom(style.koreanFontFamily, size: style.koreanFontSize * previewScale))
-                .foregroundColor(style.textColor)
-                .shadow(color: style.outlineColor.opacity(0.7), radius: style.outlineWidth * previewScale)
-                .shadow(color: style.outlineColor.opacity(0.4), radius: style.outlineWidth * previewScale * 0.5)
+        if let cgImage = SubtitleRenderer.renderBlock(
+            block, style: style, canvasSize: canvasSize
+        ) {
+            Image(nsImage: NSImage(cgImage: cgImage, size: canvasSize))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: previewSize.width, height: previewSize.height)
+                .allowsHitTesting(false)
         }
-        .multilineTextAlignment(.center)
-        .padding(.horizontal, 20 * previewScale)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .padding(.bottom, style.bottomMargin * previewScale)
     }
 }
