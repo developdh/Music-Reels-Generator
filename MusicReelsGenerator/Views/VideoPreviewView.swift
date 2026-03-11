@@ -1,5 +1,25 @@
 import SwiftUI
 import AVKit
+import AppKit
+
+/// NSViewRepresentable wrapper for AVPlayerView (avoids SwiftUI VideoPlayer crash outside .app bundle)
+struct NativeVideoPlayerView: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = player
+        view.controlsStyle = .none
+        view.showsFullScreenToggleButton = false
+        return view
+    }
+
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        if nsView.player !== player {
+            nsView.player = player
+        }
+    }
+}
 
 struct VideoPreviewView: View {
     @EnvironmentObject var vm: ProjectViewModel
@@ -7,11 +27,9 @@ struct VideoPreviewView: View {
     var body: some View {
         ZStack {
             if let player = vm.player {
-                // Video player with crop overlay
                 GeometryReader { geo in
                     ZStack {
-                        VideoPlayer(player: player)
-                            .disabled(true) // Disable built-in controls, we use our own
+                        NativeVideoPlayerView(player: player)
 
                         // Crop preview overlay
                         if vm.project.videoMetadata.isLandscape {
@@ -35,7 +53,6 @@ struct VideoPreviewView: View {
                     }
                 }
             } else {
-                // Empty state
                 VStack(spacing: 12) {
                     Image(systemName: "film")
                         .font(.system(size: 48))
@@ -74,7 +91,6 @@ struct CropOverlayView: View {
             let cropY = (containerSize.height - cropDisplayH) / 2.0
 
             ZStack {
-                // Darken outside crop area
                 Color.black.opacity(0.4)
                     .mask(
                         Rectangle()
@@ -87,7 +103,6 @@ struct CropOverlayView: View {
                             .compositingGroup()
                     )
 
-                // Crop rectangle border
                 Rectangle()
                     .stroke(Color.white, lineWidth: 2)
                     .frame(width: cropDisplayW, height: cropDisplayH)
@@ -119,6 +134,6 @@ struct SubtitleOverlayView: View {
         .multilineTextAlignment(.center)
         .padding(.horizontal, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .padding(.bottom, style.bottomMargin / 10) // Scale down for preview
+        .padding(.bottom, style.bottomMargin / 10)
     }
 }

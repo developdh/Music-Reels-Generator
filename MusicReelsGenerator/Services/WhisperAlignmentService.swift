@@ -80,8 +80,7 @@ enum WhisperAlignmentService {
             "-l", language,
             "--output-csv",
             "--output-file", outputBase,
-            "--no-timestamps", "false",
-            "--print-progress", "false"
+            "--no-prints"
         ]
 
         let result = try await ProcessRunner.run(whisper, arguments: args)

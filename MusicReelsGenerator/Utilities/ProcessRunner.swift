@@ -78,9 +78,11 @@ enum ProcessRunner {
 
     static func findWhisper() -> String? {
         let paths = [
+            ProcessRunner.which("whisper-cli"),
             ProcessRunner.which("whisper-cpp"),
-            ProcessRunner.which("main"),  // whisper.cpp default binary name
+            "/opt/homebrew/bin/whisper-cli",
             "/opt/homebrew/bin/whisper-cpp",
+            "/usr/local/bin/whisper-cli",
             "/usr/local/bin/whisper-cpp"
         ]
         return paths.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0) }
