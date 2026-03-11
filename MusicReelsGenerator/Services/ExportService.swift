@@ -317,14 +317,15 @@ class ExportService {
         let width = Int(canvasSize.width)
         let height = Int(canvasSize.height)
 
-        // Resolve fonts — apply bold trait to Japanese
+        // Resolve fonts by family name using font descriptors.
+        // NSFont(name:) expects a PostScript or full name, NOT a family name.
+        // The style stores family names (e.g. "Hiragino Sans"), so we must use
+        // NSFontDescriptor to resolve correctly.
         let fm = NSFontManager.shared
-        var jaFont = NSFont(name: style.japaneseFontFamily, size: style.japaneseFontSize)
-            ?? NSFont.systemFont(ofSize: style.japaneseFontSize)
+        var jaFont = resolveFont(family: style.japaneseFontFamily, size: style.japaneseFontSize)
         jaFont = fm.convert(jaFont, toHaveTrait: .boldFontMask)
 
-        let koFont = NSFont(name: style.koreanFontFamily, size: style.koreanFontSize)
-            ?? NSFont.systemFont(ofSize: style.koreanFontSize)
+        let koFont = resolveFont(family: style.koreanFontFamily, size: style.koreanFontSize)
 
         let textColor = NSColor(Color(hex: style.textColorHex))
         let outlineColor = NSColor(Color(hex: style.outlineColorHex))
@@ -413,15 +414,15 @@ class ExportService {
             if style.shadowEnabled {
                 let shadowAttrs: [NSAttributedString.Key: Any] = [
                     .font: jaFont,
-                    .foregroundColor: NSColor(white: 0, alpha: 0.5),
+                    .foregroundColor: NSColor(white: 0, alpha: 0.25),
                     .paragraphStyle: paragraphStyle
                 ]
                 let shadowKoAttrs: [NSAttributedString.Key: Any] = [
                     .font: koFont,
-                    .foregroundColor: NSColor(white: 0, alpha: 0.5),
+                    .foregroundColor: NSColor(white: 0, alpha: 0.25),
                     .paragraphStyle: paragraphStyle
                 ]
-                let off: CGFloat = 3
+                let off: CGFloat = 2
                 NSAttributedString(string: block.japanese, attributes: shadowAttrs)
                     .draw(in: jaRect.offsetBy(dx: off, dy: -off))
                 NSAttributedString(string: block.korean, attributes: shadowKoAttrs)
@@ -493,6 +494,31 @@ class ExportService {
         CVPixelBufferUnlockBaseAddress(outputBuffer, [])
 
         return outputBuffer
+    }
+
+    // MARK: - Font Resolution
+
+    /// Resolve a font by family name using NSFontDescriptor.
+    /// NSFont(name:) expects a PostScript/full name, not a family name.
+    /// This method correctly resolves family names like "Hiragino Sans".
+    private func resolveFont(family: String, size: Double) -> NSFont {
+        let descriptor = NSFontDescriptor(fontAttributes: [
+            .family: family
+        ])
+        if let font = NSFont(descriptor: descriptor, size: size) {
+            print("[Export Font] Resolved '\(family)' → \(font.fontName) (\(font.familyName ?? "?"))")
+            return font
+        }
+
+        // Fallback: try NSFont(name:) in case family is actually a PostScript name
+        if let font = NSFont(name: family, size: size) {
+            print("[Export Font] Resolved '\(family)' via name → \(font.fontName)")
+            return font
+        }
+
+        // Last resort: system font
+        print("[Export Font] WARNING: Could not resolve '\(family)', falling back to system font")
+        return NSFont.systemFont(ofSize: size)
     }
 
     func cancel() {}

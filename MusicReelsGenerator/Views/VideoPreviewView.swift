@@ -175,14 +175,14 @@ struct SubtitleOverlayView: View {
                 .font(.custom(style.japaneseFontFamily, size: style.japaneseFontSize * previewScale))
                 .fontWeight(.bold)
                 .foregroundColor(style.textColor)
-                .shadow(color: style.outlineColor.opacity(0.9), radius: style.outlineWidth * previewScale)
-                .shadow(color: style.outlineColor.opacity(0.7), radius: style.outlineWidth * previewScale * 0.5)
+                .shadow(color: style.outlineColor.opacity(0.7), radius: style.outlineWidth * previewScale)
+                .shadow(color: style.outlineColor.opacity(0.4), radius: style.outlineWidth * previewScale * 0.5)
 
             Text(block.korean)
                 .font(.custom(style.koreanFontFamily, size: style.koreanFontSize * previewScale))
                 .foregroundColor(style.textColor)
-                .shadow(color: style.outlineColor.opacity(0.9), radius: style.outlineWidth * previewScale)
-                .shadow(color: style.outlineColor.opacity(0.7), radius: style.outlineWidth * previewScale * 0.5)
+                .shadow(color: style.outlineColor.opacity(0.7), radius: style.outlineWidth * previewScale)
+                .shadow(color: style.outlineColor.opacity(0.4), radius: style.outlineWidth * previewScale * 0.5)
         }
         .multilineTextAlignment(.center)
         .padding(.horizontal, 20 * previewScale)
