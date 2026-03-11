@@ -8,6 +8,7 @@ struct LyricBlock: Identifiable, Codable, Equatable {
     var endTime: Double?
     var confidence: Double?
     var isManuallyAdjusted: Bool
+    var isAnchor: Bool
 
     init(
         id: UUID = UUID(),
@@ -16,7 +17,8 @@ struct LyricBlock: Identifiable, Codable, Equatable {
         startTime: Double? = nil,
         endTime: Double? = nil,
         confidence: Double? = nil,
-        isManuallyAdjusted: Bool = false
+        isManuallyAdjusted: Bool = false,
+        isAnchor: Bool = false
     ) {
         self.id = id
         self.japanese = japanese
@@ -25,6 +27,20 @@ struct LyricBlock: Identifiable, Codable, Equatable {
         self.endTime = endTime
         self.confidence = confidence
         self.isManuallyAdjusted = isManuallyAdjusted
+        self.isAnchor = isAnchor
+    }
+
+    // Custom Decodable for backward compatibility (old files lack isAnchor)
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        japanese = try container.decode(String.self, forKey: .japanese)
+        korean = try container.decode(String.self, forKey: .korean)
+        startTime = try container.decodeIfPresent(Double.self, forKey: .startTime)
+        endTime = try container.decodeIfPresent(Double.self, forKey: .endTime)
+        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence)
+        isManuallyAdjusted = try container.decodeIfPresent(Bool.self, forKey: .isManuallyAdjusted) ?? false
+        isAnchor = try container.decodeIfPresent(Bool.self, forKey: .isAnchor) ?? false
     }
 
     var hasTimingData: Bool {

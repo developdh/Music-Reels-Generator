@@ -181,6 +181,46 @@ class ProjectViewModel: ObservableObject {
         updateBlock(id: id, endTime: currentTime)
     }
 
+    /// Shift all blocks from the selected block onward by a delta
+    func shiftFollowingBlocks(fromBlockID id: UUID, delta: Double) {
+        guard let startIdx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+
+        for i in startIdx..<project.lyricBlocks.count {
+            if let st = project.lyricBlocks[i].startTime {
+                project.lyricBlocks[i].startTime = max(0, st + delta)
+            }
+            if let et = project.lyricBlocks[i].endTime {
+                project.lyricBlocks[i].endTime = max(0, et + delta)
+            }
+        }
+        project.touch()
+        isDirty = true
+    }
+
+    /// Set start time of selected block and shift all following blocks by the same delta
+    func setStartTimeAndShiftFollowing() {
+        guard let id = selectedBlockID,
+              let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }),
+              let oldStart = project.lyricBlocks[idx].startTime else {
+            // No old start — just set normally
+            setStartTimeToCurrent()
+            return
+        }
+        let delta = currentTime - oldStart
+        shiftFollowingBlocks(fromBlockID: id, delta: delta)
+        project.lyricBlocks[idx].isManuallyAdjusted = true
+        project.lyricBlocks[idx].isAnchor = true
+        project.lyricBlocks[idx].confidence = 1.0
+    }
+
+    /// Toggle anchor status for a block
+    func toggleAnchor(id: UUID) {
+        guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+        project.lyricBlocks[idx].isAnchor.toggle()
+        project.touch()
+        isDirty = true
+    }
+
     // MARK: - Auto Alignment
 
     func runAutoAlignment() async {

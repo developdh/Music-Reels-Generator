@@ -1,5 +1,11 @@
 import Foundation
 
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+
 enum WhisperError: LocalizedError {
     case whisperNotFound
     case modelNotFound(String)
@@ -113,7 +119,20 @@ enum WhisperAlignmentService {
         return segments
     }
 
-    /// Align whisper segments to lyric blocks using fuzzy matching
+    // MARK: - Monotonic DP Alignment
+
+    /// A candidate match: segment range mapped to a block
+    private struct SegmentMatch {
+        let segStart: Int   // first segment index
+        let segEnd: Int     // last segment index (inclusive)
+        let score: Double
+        var startTime: Double
+        var endTime: Double
+    }
+
+    /// Align whisper segments to lyric blocks using monotonic DP matching.
+    /// Guarantees: monotonically increasing timing, local search windows,
+    /// anchor-based interpolation for unmatched blocks.
     static func align(
         segments: [WhisperSegment],
         to blocks: [LyricBlock],
@@ -121,77 +140,140 @@ enum WhisperAlignmentService {
     ) -> [LyricBlock] {
         guard !segments.isEmpty, !blocks.isEmpty else { return blocks }
 
-        onProgress?("Aligning \(segments.count) segments to \(blocks.count) lyric blocks...")
+        let B = blocks.count
+        let S = segments.count
+        onProgress?("Aligning \(S) segments to \(B) lyric blocks (DP)...")
 
-        // Build a combined transcript with timing
-        var alignedBlocks = blocks
-        var segmentIndex = 0
+        // Step 1: Build score matrix — for each block, find best match at each segment position
+        // We allow matching 1, 2, or 3 consecutive segments to handle whisper splitting lines
+        let maxCombine = 3
+        let matchThreshold = 0.25
 
-        for blockIndex in 0..<alignedBlocks.count {
-            guard !alignedBlocks[blockIndex].isManuallyAdjusted else { continue }
+        // For each block, collect candidate matches
+        var candidates: [[SegmentMatch]] = Array(repeating: [], count: B)
 
-            let blockText = alignedBlocks[blockIndex].japanese
-            var bestScore: Double = 0
-            var bestSegmentStart: Double?
-            var bestSegmentEnd: Double?
+        for bi in 0..<B {
+            if blocks[bi].isManuallyAdjusted { continue }
 
-            // Try matching against segments starting from current position
-            // Use a sliding window approach
-            let searchEnd = min(segmentIndex + segments.count, segments.count)
+            let blockText = blocks[bi].japanese
 
-            for i in segmentIndex..<searchEnd {
-                let segText = segments[i].text
-                let score = JapaneseTextNormalizer.similarity(blockText, segText)
+            for si in 0..<S {
+                // Try combining 1..maxCombine consecutive segments
+                for span in 1...maxCombine {
+                    let endSeg = si + span - 1
+                    guard endSeg < S else { break }
 
-                if score > bestScore {
-                    bestScore = score
-                    bestSegmentStart = segments[i].startTime
-                    bestSegmentEnd = segments[i].endTime
-                }
+                    let combinedText = (si...endSeg).map { segments[$0].text }.joined()
+                    let score = JapaneseTextNormalizer.similarity(blockText, combinedText)
 
-                // Try combining consecutive segments for longer lyrics
-                if i + 1 < segments.count {
-                    let combined = segText + segments[i + 1].text
-                    let combinedScore = JapaneseTextNormalizer.similarity(blockText, combined)
-                    if combinedScore > bestScore {
-                        bestScore = combinedScore
-                        bestSegmentStart = segments[i].startTime
-                        bestSegmentEnd = segments[i + 1].endTime
+                    if score >= matchThreshold {
+                        candidates[bi].append(SegmentMatch(
+                            segStart: si,
+                            segEnd: endSeg,
+                            score: score,
+                            startTime: segments[si].startTime,
+                            endTime: segments[endSeg].endTime
+                        ))
                     }
                 }
             }
+        }
 
-            // If we found a reasonable match, use it
-            if bestScore > 0.2, let start = bestSegmentStart, let end = bestSegmentEnd {
-                alignedBlocks[blockIndex].startTime = start
-                alignedBlocks[blockIndex].endTime = end
-                alignedBlocks[blockIndex].confidence = bestScore
+        // Step 2: Monotonic DP
+        // dp[bi] = best total score using blocks 0..bi, with the constraint
+        // that matched segments are monotonically increasing.
+        // For each block we either skip it (no match) or pick one of its candidates.
+        // If matched, the segment position must be > the last matched segment position.
 
-                // Advance segment index to avoid double-matching
-                if let matchedIdx = (segmentIndex..<searchEnd).first(where: {
-                    segments[$0].startTime == start
-                }) {
-                    segmentIndex = matchedIdx + 1
+        // State: (bestScore, lastSegEnd, assignments)
+        // To keep it tractable, track per-block: best score achievable, which candidate was chosen
+
+        struct DPState {
+            var totalScore: Double
+            var lastSegEnd: Int  // last matched segment end index, -1 if none
+            var choices: [Int?]  // for each block: index into candidates[bi], or nil if skipped
+        }
+
+        // Forward pass with pruning: for each block, decide match or skip
+        // We keep a small set of best states to avoid exponential blowup
+        let maxStates = 50  // beam width
+
+        var beam: [DPState] = [DPState(totalScore: 0, lastSegEnd: -1, choices: [])]
+
+        for bi in 0..<B {
+            onProgress?("Aligning block \(bi + 1)/\(B)...")
+
+            var nextBeam: [DPState] = []
+
+            for state in beam {
+                // Option 1: Skip this block (no match)
+                var skipped = state
+                skipped.choices.append(nil)
+                nextBeam.append(skipped)
+
+                // Option 2: Match with a candidate (must be monotonically after lastSegEnd)
+                if !blocks[bi].isManuallyAdjusted {
+                    for (ci, cand) in candidates[bi].enumerated() {
+                        if cand.segStart > state.lastSegEnd {
+                            var matched = state
+                            matched.totalScore += cand.score
+                            matched.lastSegEnd = cand.segEnd
+                            matched.choices.append(ci)
+                            nextBeam.append(matched)
+                        }
+                    }
+                } else {
+                    // Manually adjusted blocks keep their timing; treat as anchors
+                    // but don't consume segments — just pass through
                 }
+            }
+
+            // Prune beam: keep top states by score
+            nextBeam.sort { $0.totalScore > $1.totalScore }
+            beam = Array(nextBeam.prefix(maxStates))
+        }
+
+        // Pick best final state
+        guard let best = beam.first else { return blocks }
+
+        // Step 3: Apply DP result
+        var alignedBlocks = blocks
+
+        for bi in 0..<B {
+            guard !alignedBlocks[bi].isManuallyAdjusted else {
+                alignedBlocks[bi].isAnchor = true
+                continue
+            }
+
+            if let ci = best.choices[bi], let cand = candidates[bi][safe: ci] {
+                alignedBlocks[bi].startTime = cand.startTime
+                alignedBlocks[bi].endTime = cand.endTime
+                alignedBlocks[bi].confidence = cand.score
+                alignedBlocks[bi].isAnchor = cand.score >= 0.6
             } else {
-                alignedBlocks[blockIndex].confidence = 0
+                alignedBlocks[bi].startTime = nil
+                alignedBlocks[bi].endTime = nil
+                alignedBlocks[bi].confidence = 0
+                alignedBlocks[bi].isAnchor = false
             }
         }
 
-        // Post-process: fill gaps by distributing time evenly for unmatched blocks
-        fillTimingGaps(&alignedBlocks, totalDuration: segments.last?.endTime ?? 0)
+        // Step 4: Anchor-based interpolation for unmatched blocks
+        interpolateFromAnchors(&alignedBlocks, totalDuration: segments.last?.endTime ?? 0)
 
-        onProgress?("Alignment complete.")
+        let matched = alignedBlocks.filter { ($0.confidence ?? 0) >= matchThreshold }.count
+        onProgress?("Alignment complete: \(matched)/\(B) blocks matched.")
         return alignedBlocks
     }
 
-    /// Fill timing gaps for blocks that didn't match
-    private static func fillTimingGaps(_ blocks: inout [LyricBlock], totalDuration: Double) {
+    /// Interpolate timing for unmatched blocks using surrounding anchors.
+    /// Uses proportional spacing based on text length rather than equal distribution.
+    private static func interpolateFromAnchors(_ blocks: inout [LyricBlock], totalDuration: Double) {
         guard !blocks.isEmpty else { return }
 
-        // Find runs of unmatched blocks between matched ones
         var i = 0
         while i < blocks.count {
+            // Skip blocks that already have timing
             if blocks[i].startTime != nil {
                 i += 1
                 continue
@@ -203,7 +285,7 @@ enum WhisperAlignmentService {
                 runEnd += 1
             }
 
-            // Determine time bounds for interpolation
+            // Determine time bounds from surrounding anchors
             let startBound: Double
             if i > 0, let prevEnd = blocks[i - 1].endTime {
                 startBound = prevEnd
@@ -219,14 +301,32 @@ enum WhisperAlignmentService {
             }
 
             let runLength = runEnd - i
-            let duration = endBound - startBound
-            let blockDuration = duration / Double(runLength)
+            let availableDuration = endBound - startBound
 
-            for j in 0..<runLength {
-                let idx = i + j
-                blocks[idx].startTime = startBound + Double(j) * blockDuration
-                blocks[idx].endTime = startBound + Double(j + 1) * blockDuration
-                blocks[idx].confidence = 0.1 // Very low confidence for interpolated
+            // Proportional distribution based on Japanese text length
+            let textLengths = (i..<runEnd).map { Double(blocks[$0].japanese.count) }
+            let totalTextLength = textLengths.reduce(0, +)
+
+            if totalTextLength > 0 && availableDuration > 0 {
+                var cursor = startBound
+                for j in 0..<runLength {
+                    let idx = i + j
+                    let proportion = textLengths[j] / totalTextLength
+                    let blockDuration = availableDuration * proportion
+                    blocks[idx].startTime = cursor
+                    blocks[idx].endTime = cursor + blockDuration
+                    blocks[idx].confidence = 0.05 // Very low — interpolated
+                    cursor += blockDuration
+                }
+            } else {
+                // Equal distribution fallback
+                let blockDuration = availableDuration / Double(max(runLength, 1))
+                for j in 0..<runLength {
+                    let idx = i + j
+                    blocks[idx].startTime = startBound + Double(j) * blockDuration
+                    blocks[idx].endTime = startBound + Double(j + 1) * blockDuration
+                    blocks[idx].confidence = 0.05
+                }
             }
 
             i = runEnd

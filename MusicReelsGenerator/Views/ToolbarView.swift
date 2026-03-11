@@ -54,6 +54,15 @@ struct ToolbarView: View {
             }
             .disabled(!vm.project.isReadyForExport)
 
+            Divider().frame(height: 20)
+
+            // Open
+            Button {
+                openProject()
+            } label: {
+                Label("Open", systemImage: "folder")
+            }
+
             // Save
             Button {
                 if !vm.saveProject() {
@@ -73,6 +82,17 @@ struct ToolbarView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             Task { await vm.importVideo(url: url) }
+        }
+    }
+
+    private func openProject() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: ProjectPersistenceService.fileExtension)!]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+
+        if panel.runModal() == .OK, let url = panel.url {
+            vm.loadProject(from: url)
         }
     }
 

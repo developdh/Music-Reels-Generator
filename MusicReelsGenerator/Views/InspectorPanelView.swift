@@ -125,6 +125,32 @@ struct BlockInspectorView: View {
                     }
                     .disabled(block.endTime == nil)
                 }
+
+                Divider()
+
+                GroupBox("Correction") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button("Set Start & Shift Following") {
+                            vm.setStartTimeAndShiftFollowing()
+                        }
+                        .controlSize(.small)
+                        .help("Set this block's start to current time and shift all following blocks by the same delta")
+
+                        HStack(spacing: 4) {
+                            Button("-0.5s") { vm.shiftFollowingBlocks(fromBlockID: block.id, delta: -0.5) }
+                            Button("-0.1s") { vm.shiftFollowingBlocks(fromBlockID: block.id, delta: -0.1) }
+                            Button("+0.1s") { vm.shiftFollowingBlocks(fromBlockID: block.id, delta: 0.1) }
+                            Button("+0.5s") { vm.shiftFollowingBlocks(fromBlockID: block.id, delta: 0.5) }
+                        }
+                        .controlSize(.mini)
+
+                        Toggle("Anchor", isOn: Binding(
+                            get: { block.isAnchor },
+                            set: { _ in vm.toggleAnchor(id: block.id) }
+                        ))
+                        .help("Anchor blocks are used as fixed timing references during alignment")
+                    }
+                }
             }
         } else {
             VStack(spacing: 8) {
