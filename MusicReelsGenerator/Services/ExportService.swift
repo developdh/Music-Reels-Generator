@@ -1,6 +1,6 @@
 import Foundation
 import AVFoundation
-import CoreImage
+import CoreGraphics
 import AppKit
 import SwiftUI
 
@@ -39,9 +39,6 @@ enum ExportState: Equatable {
 }
 
 class ExportService {
-    /// Two-step export:
-    /// 1. FFmpeg: scale-to-fill + crop → intermediate MP4 (no subtitles)
-    /// 2. AVFoundation: overlay subtitle CALayers → final MP4
     func export(
         project: Project,
         outputURL: URL,
@@ -65,7 +62,7 @@ class ExportService {
         let outH = crop.outputHeight
         let meta = project.videoMetadata
 
-        // --- Step 1: FFmpeg crop/scale ---
+        // --- Step 1: FFmpeg crop/scale → intermediate file ---
         let tempDir = "/tmp/mreels_export"
         try? FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
         let croppedURL = URL(fileURLWithPath: "\(tempDir)/cropped.mp4")
@@ -90,46 +87,44 @@ class ExportService {
         let ffmpegArgs = [
             "-i", videoURL.path,
             "-vf", filterChain,
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "18",
-            "-c:a", "aac",
-            "-b:a", "192k",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k",
             "-r", "30",
             "-movflags", "+faststart",
-            "-y",
-            croppedURL.path
+            "-y", croppedURL.path
         ]
 
-        onProgress(.exporting(progress: 0.1))
-        print("FFmpeg crop command: \(ffmpeg) \(ffmpegArgs.joined(separator: " "))")
+        onProgress(.exporting(progress: 0.05))
+        print("FFmpeg crop: \(ffmpeg) \(ffmpegArgs.joined(separator: " "))")
 
         let cropResult = try await ProcessRunner.run(ffmpeg, arguments: ffmpegArgs)
         guard cropResult.succeeded else {
             throw ExportError.exportFailed(cropResult.stderr)
         }
 
-        onProgress(.exporting(progress: 0.5))
+        onProgress(.exporting(progress: 0.4))
 
-        // --- Step 2: Burn subtitles via AVFoundation + CALayer ---
-        try await burnSubtitles(
+        // --- Step 2: Burn subtitles frame-by-frame via AVAssetReader/Writer ---
+        try? FileManager.default.removeItem(at: outputURL)
+
+        try await burnSubtitlesFrameByFrame(
             inputURL: croppedURL,
             outputURL: outputURL,
             blocks: timedBlocks,
             style: project.subtitleStyle,
             outputSize: CGSize(width: outW, height: outH),
             onProgress: { p in
-                onProgress(.exporting(progress: 0.5 + p * 0.5))
+                onProgress(.exporting(progress: 0.4 + p * 0.6))
             }
         )
 
-        // Cleanup
         try? FileManager.default.removeItem(at: croppedURL)
-
         onProgress(.completed(outputURL))
     }
 
-    private func burnSubtitles(
+    // MARK: - Frame-by-frame subtitle burn-in
+
+    private func burnSubtitlesFrameByFrame(
         inputURL: URL,
         outputURL: URL,
         blocks: [LyricBlock],
@@ -139,239 +134,332 @@ class ExportService {
     ) async throws {
         let asset = AVURLAsset(url: inputURL)
         let duration = try await asset.load(.duration)
+        let totalSeconds = CMTimeGetSeconds(duration)
 
-        let composition = AVMutableComposition()
+        // --- Reader ---
+        let reader = try AVAssetReader(asset: asset)
 
-        // Add video track
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
-        guard let sourceVideoTrack = videoTracks.first else {
+        guard let videoTrack = videoTracks.first else {
             throw ExportError.compositionFailed
         }
-        guard let compVideoTrack = composition.addMutableTrack(
-            withMediaType: .video,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        ) else {
-            throw ExportError.compositionFailed
-        }
-        try compVideoTrack.insertTimeRange(
-            CMTimeRange(start: .zero, duration: duration),
-            of: sourceVideoTrack,
-            at: .zero
-        )
 
-        // Add audio track
+        let videoOutputSettings: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ]
+        let videoReaderOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: videoOutputSettings)
+        videoReaderOutput.alwaysCopiesSampleData = false
+        reader.add(videoReaderOutput)
+
+        var audioReaderOutput: AVAssetReaderTrackOutput?
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-        if let sourceAudioTrack = audioTracks.first,
-           let compAudioTrack = composition.addMutableTrack(
-            withMediaType: .audio,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-           ) {
-            try compAudioTrack.insertTimeRange(
-                CMTimeRange(start: .zero, duration: duration),
-                of: sourceAudioTrack,
-                at: .zero
-            )
+        if let audioTrack = audioTracks.first {
+            let audioSettings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: 44100,
+                AVNumberOfChannelsKey: 2,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsNonInterleaved: false
+            ]
+            let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: audioSettings)
+            output.alwaysCopiesSampleData = false
+            reader.add(output)
+            audioReaderOutput = output
         }
 
-        // Build CALayer-based subtitle overlay
-        let videoLayer = CALayer()
-        videoLayer.frame = CGRect(origin: .zero, size: outputSize)
+        // --- Writer ---
+        let writer = try AVAssetWriter(url: outputURL, fileType: .mp4)
 
-        let overlayLayer = CALayer()
-        overlayLayer.frame = CGRect(origin: .zero, size: outputSize)
-        overlayLayer.isGeometryFlipped = true
+        let videoWriterSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: Int(outputSize.width),
+            AVVideoHeightKey: Int(outputSize.height),
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: 8_000_000,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+            ]
+        ]
+        let videoWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoWriterSettings)
+        videoWriterInput.expectsMediaDataInRealTime = false
 
-        // Add subtitle layers for each block
-        for block in blocks {
-            guard let startTime = block.startTime, let endTime = block.endTime else { continue }
+        let pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: videoWriterInput,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: Int(outputSize.width),
+                kCVPixelBufferHeightKey as String: Int(outputSize.height)
+            ]
+        )
+        writer.add(videoWriterInput)
 
-            let subtitleLayer = makeSubtitleLayer(
-                block: block,
-                style: style,
-                canvasSize: outputSize
-            )
-
-            // Animate: hidden → visible → hidden
-            let showAnim = CABasicAnimation(keyPath: "opacity")
-            showAnim.fromValue = 0.0
-            showAnim.toValue = 1.0
-            showAnim.beginTime = AVCoreAnimationBeginTimeAtZero + startTime
-            showAnim.duration = 0.001
-            showAnim.fillMode = .forwards
-            showAnim.isRemovedOnCompletion = false
-
-            let hideAnim = CABasicAnimation(keyPath: "opacity")
-            hideAnim.fromValue = 1.0
-            hideAnim.toValue = 0.0
-            hideAnim.beginTime = AVCoreAnimationBeginTimeAtZero + endTime
-            hideAnim.duration = 0.001
-            hideAnim.fillMode = .forwards
-            hideAnim.isRemovedOnCompletion = false
-
-            subtitleLayer.opacity = 0
-            subtitleLayer.add(showAnim, forKey: "show")
-            subtitleLayer.add(hideAnim, forKey: "hide")
-
-            overlayLayer.addSublayer(subtitleLayer)
+        var audioWriterInput: AVAssetWriterInput?
+        if audioReaderOutput != nil {
+            let audioSettings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: 44100,
+                AVNumberOfChannelsKey: 2,
+                AVEncoderBitRateKey: 192000
+            ]
+            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+            input.expectsMediaDataInRealTime = false
+            writer.add(input)
+            audioWriterInput = input
         }
 
-        let parentLayer = CALayer()
-        parentLayer.frame = CGRect(origin: .zero, size: outputSize)
-        parentLayer.addSublayer(videoLayer)
-        parentLayer.addSublayer(overlayLayer)
-
-        // Create video composition with animation tool
-        let videoComp = AVMutableVideoComposition()
-        videoComp.renderSize = outputSize
-        videoComp.frameDuration = CMTime(value: 1, timescale: 30)
-
-        let instruction = AVMutableVideoCompositionInstruction()
-        instruction.timeRange = CMTimeRange(start: .zero, duration: duration)
-
-        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compVideoTrack)
-        instruction.layerInstructions = [layerInstruction]
-        videoComp.instructions = [instruction]
-
-        videoComp.animationTool = AVVideoCompositionCoreAnimationTool(
-            postProcessingAsVideoLayer: videoLayer,
-            in: parentLayer
+        // --- Pre-render subtitle images ---
+        let subtitleImages = prerenderSubtitles(
+            blocks: blocks, style: style, canvasSize: outputSize
         )
 
-        // Export
-        try? FileManager.default.removeItem(at: outputURL)
+        // --- Process ---
+        reader.startReading()
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
 
-        guard let exportSession = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetHighestQuality
-        ) else {
-            throw ExportError.compositionFailed
+        // Write audio on a background queue
+        let audioDone = DispatchSemaphore(value: 0)
+        if let audioInput = audioWriterInput, let audioOutput = audioReaderOutput {
+            let audioQueue = DispatchQueue(label: "audio.writer")
+            audioInput.requestMediaDataWhenReady(on: audioQueue) {
+                while audioInput.isReadyForMoreMediaData {
+                    if let sample = audioOutput.copyNextSampleBuffer() {
+                        audioInput.append(sample)
+                    } else {
+                        audioInput.markAsFinished()
+                        audioDone.signal()
+                        return
+                    }
+                }
+            }
+        } else {
+            audioDone.signal()
         }
 
-        exportSession.outputURL = outputURL
-        exportSession.outputFileType = .mp4
-        exportSession.videoComposition = videoComp
+        // Write video with subtitle overlay
+        let width = Int(outputSize.width)
+        let height = Int(outputSize.height)
 
-        await exportSession.export()
+        while reader.status == .reading {
+            if !videoWriterInput.isReadyForMoreMediaData {
+                try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+                continue
+            }
 
-        switch exportSession.status {
-        case .completed:
-            return
-        case .failed:
-            throw ExportError.exportFailed(
-                exportSession.error?.localizedDescription ?? "Unknown export error"
-            )
-        case .cancelled:
-            throw ExportError.cancelled
-        default:
-            throw ExportError.exportFailed("Export ended with status: \(exportSession.status.rawValue)")
+            guard let sampleBuffer = videoReaderOutput.copyNextSampleBuffer() else {
+                break
+            }
+
+            let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            let timeSec = CMTimeGetSeconds(presentationTime)
+
+            // Find active subtitle block
+            let activeBlock = blocks.first { b in
+                guard let s = b.startTime, let e = b.endTime else { return false }
+                return timeSec >= s && timeSec < e
+            }
+
+            guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { continue }
+
+            if let activeBlock, let subtitleImage = subtitleImages[activeBlock.id] {
+                // Draw subtitle onto frame
+                let newBuffer = drawSubtitle(
+                    subtitleImage, onto: imageBuffer, width: width, height: height,
+                    pool: pixelBufferAdaptor.pixelBufferPool
+                )
+                pixelBufferAdaptor.append(newBuffer ?? imageBuffer, withPresentationTime: presentationTime)
+            } else {
+                // Pass frame through unchanged
+                pixelBufferAdaptor.append(imageBuffer, withPresentationTime: presentationTime)
+            }
+
+            // Progress
+            if totalSeconds > 0 {
+                let p = timeSec / totalSeconds
+                await MainActor.run { onProgress(p) }
+            }
+        }
+
+        videoWriterInput.markAsFinished()
+        audioDone.wait()
+
+        await writer.finishWriting()
+
+        if writer.status == .failed {
+            throw ExportError.exportFailed(writer.error?.localizedDescription ?? "Writer failed")
+        }
+        if reader.status == .failed {
+            throw ExportError.exportFailed(reader.error?.localizedDescription ?? "Reader failed")
         }
     }
 
-    /// Create a CALayer containing the bilingual subtitle for one block
-    private func makeSubtitleLayer(
-        block: LyricBlock,
+    // MARK: - Pre-render subtitles as CGImage
+
+    /// Pre-render each block's subtitle as a transparent CGImage (avoids per-frame text layout)
+    private func prerenderSubtitles(
+        blocks: [LyricBlock],
         style: SubtitleStyle,
         canvasSize: CGSize
-    ) -> CALayer {
-        let container = CALayer()
-        container.frame = CGRect(origin: .zero, size: canvasSize)
+    ) -> [UUID: CGImage] {
+        var result: [UUID: CGImage] = [:]
+        let width = Int(canvasSize.width)
+        let height = Int(canvasSize.height)
 
         let jaFont = NSFont(name: style.japaneseFontFamily, size: style.japaneseFontSize)
             ?? NSFont.boldSystemFont(ofSize: style.japaneseFontSize)
         let koFont = NSFont(name: style.koreanFontFamily, size: style.koreanFontSize)
             ?? NSFont.systemFont(ofSize: style.koreanFontSize)
+        let textColor = NSColor(Color(hex: style.textColorHex)).cgColor
+        let outlineColor = NSColor(Color(hex: style.outlineColorHex)).cgColor
 
-        let textColor = NSColor(Color(hex: style.textColorHex))
-        let outlineColor = NSColor(Color(hex: style.outlineColorHex))
+        for block in blocks {
+            guard block.hasTimingData else { continue }
 
-        // Japanese text layer
-        let jaLayer = makeTextLayer(
-            text: block.japanese,
-            font: jaFont,
-            textColor: textColor,
-            outlineColor: outlineColor,
-            outlineWidth: style.outlineWidth,
-            canvasWidth: canvasSize.width
-        )
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            guard let ctx = CGContext(
+                data: nil, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            ) else { continue }
 
-        // Korean text layer
-        let koLayer = makeTextLayer(
-            text: block.korean,
-            font: koFont,
-            textColor: textColor,
-            outlineColor: outlineColor,
-            outlineWidth: style.outlineWidth,
-            canvasWidth: canvasSize.width
-        )
+            // CG origin is bottom-left
+            let jaAttrString = NSAttributedString(string: block.japanese, attributes: [
+                .font: jaFont,
+                .foregroundColor: NSColor(cgColor: textColor) ?? .white
+            ])
+            let koAttrString = NSAttributedString(string: block.korean, attributes: [
+                .font: koFont,
+                .foregroundColor: NSColor(cgColor: textColor) ?? .white
+            ])
 
-        // Position: bottom-aligned with margins
-        let koY = style.bottomMargin
-        let jaY = koY + koLayer.frame.height + style.lineSpacing
+            let maxTextWidth = canvasSize.width - 60
+            let jaSize = jaAttrString.boundingRect(
+                with: CGSize(width: maxTextWidth, height: 500),
+                options: [.usesLineFragmentOrigin]
+            ).size
+            let koSize = koAttrString.boundingRect(
+                with: CGSize(width: maxTextWidth, height: 500),
+                options: [.usesLineFragmentOrigin]
+            ).size
 
-        koLayer.frame.origin = CGPoint(
-            x: (canvasSize.width - koLayer.frame.width) / 2,
-            y: koY
-        )
-        jaLayer.frame.origin = CGPoint(
-            x: (canvasSize.width - jaLayer.frame.width) / 2,
-            y: jaY
-        )
+            // Y positions (CG: origin bottom-left)
+            let koY = style.bottomMargin
+            let jaY = koY + koSize.height + style.lineSpacing
 
-        container.addSublayer(jaLayer)
-        container.addSublayer(koLayer)
+            // Draw with outline: draw text twice — stroke then fill
+            ctx.saveGState()
 
-        return container
+            // Korean outline + fill
+            let koX = (canvasSize.width - koSize.width) / 2
+            drawOutlinedText(ctx: ctx, attrString: koAttrString,
+                           at: CGPoint(x: koX, y: koY),
+                           size: CGSize(width: maxTextWidth, height: koSize.height + 10),
+                           outlineColor: outlineColor, outlineWidth: style.outlineWidth)
+
+            // Japanese outline + fill
+            let jaX = (canvasSize.width - jaSize.width) / 2
+            drawOutlinedText(ctx: ctx, attrString: jaAttrString,
+                           at: CGPoint(x: jaX, y: jaY),
+                           size: CGSize(width: maxTextWidth, height: jaSize.height + 10),
+                           outlineColor: outlineColor, outlineWidth: style.outlineWidth)
+
+            ctx.restoreGState()
+
+            if let image = ctx.makeImage() {
+                result[block.id] = image
+            }
+        }
+
+        return result
     }
 
-    private func makeTextLayer(
-        text: String,
-        font: NSFont,
-        textColor: NSColor,
-        outlineColor: NSColor,
-        outlineWidth: Double,
-        canvasWidth: CGFloat
-    ) -> CATextLayer {
-        let layer = CATextLayer()
+    private func drawOutlinedText(
+        ctx: CGContext,
+        attrString: NSAttributedString,
+        at point: CGPoint,
+        size: CGSize,
+        outlineColor: CGColor,
+        outlineWidth: Double
+    ) {
+        let line = CTLineCreateWithAttributedString(attrString)
+        let runs = CTLineGetGlyphRuns(line) as! [CTRun]
 
-        let style = NSMutableParagraphStyle()
-        style.alignment = .center
+        // Draw outline
+        ctx.saveGState()
+        ctx.setTextDrawingMode(.stroke)
+        ctx.setStrokeColor(outlineColor)
+        ctx.setLineWidth(CGFloat(outlineWidth * 2))
+        ctx.setLineJoin(.round)
+        ctx.textPosition = point
+        for run in runs {
+            CTRunDraw(run, ctx, CFRange())
+        }
+        ctx.restoreGState()
 
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: textColor,
-            .strokeColor: outlineColor,
-            .strokeWidth: -(outlineWidth * 2), // Negative = fill + stroke
-            .paragraphStyle: style
-        ]
-
-        let attrString = NSAttributedString(string: text, attributes: attributes)
-        layer.string = attrString
-        layer.isWrapped = true
-        layer.alignmentMode = .center
-        layer.contentsScale = 2.0
-
-        // Calculate size
-        let maxWidth = canvasWidth - 40
-        let boundingRect = attrString.boundingRect(
-            with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        )
-        layer.frame = CGRect(
-            x: 0, y: 0,
-            width: min(boundingRect.width + 20, canvasWidth),
-            height: boundingRect.height + 10
-        )
-
-        // Shadow
-        layer.shadowColor = outlineColor.cgColor
-        layer.shadowRadius = 4
-        layer.shadowOpacity = 0.8
-        layer.shadowOffset = CGSize(width: 0, height: -2)
-
-        return layer
+        // Draw fill
+        ctx.saveGState()
+        ctx.setTextDrawingMode(.fill)
+        ctx.textPosition = point
+        for run in runs {
+            CTRunDraw(run, ctx, CFRange())
+        }
+        ctx.restoreGState()
     }
 
-    func cancel() {
-        // TODO: cancel support for AVAssetExportSession
+    // MARK: - Composite subtitle image onto video frame
+
+    private func drawSubtitle(
+        _ subtitleImage: CGImage,
+        onto pixelBuffer: CVPixelBuffer,
+        width: Int, height: Int,
+        pool: CVPixelBufferPool?
+    ) -> CVPixelBuffer? {
+        var newBuffer: CVPixelBuffer?
+
+        if let pool {
+            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &newBuffer)
+        }
+        guard let outputBuffer = newBuffer else { return nil }
+
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        CVPixelBufferLockBaseAddress(outputBuffer, [])
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: CVPixelBufferGetBaseAddress(outputBuffer),
+            width: width, height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: CVPixelBufferGetBytesPerRow(outputBuffer),
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else {
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+            CVPixelBufferUnlockBaseAddress(outputBuffer, [])
+            return nil
+        }
+
+        // Draw original frame
+        if let srcCtx = CGContext(
+            data: CVPixelBufferGetBaseAddress(pixelBuffer),
+            width: width, height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ), let frameImage = srcCtx.makeImage() {
+            ctx.draw(frameImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+
+        // Draw subtitle overlay
+        ctx.draw(subtitleImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+        CVPixelBufferUnlockBaseAddress(outputBuffer, [])
+
+        return outputBuffer
     }
+
+    func cancel() {}
 }
