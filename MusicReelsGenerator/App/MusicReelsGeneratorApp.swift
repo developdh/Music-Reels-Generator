@@ -24,7 +24,7 @@ struct MusicReelsGeneratorApp: App {
                 .keyboardShortcut("o", modifiers: .command)
 
                 Button("Save Project") {
-                    viewModel.saveProject()
+                    save()
                 }
                 .keyboardShortcut("s", modifiers: .command)
 
@@ -63,6 +63,13 @@ struct MusicReelsGeneratorApp: App {
 
         if panel.runModal() == .OK, let url = panel.url {
             viewModel.loadProject(from: url)
+        }
+    }
+
+    private func save() {
+        if !viewModel.saveProject() {
+            // No file URL yet — show Save As
+            saveProjectAs()
         }
     }
 

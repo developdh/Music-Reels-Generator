@@ -56,7 +56,9 @@ struct ToolbarView: View {
 
             // Save
             Button {
-                vm.saveProject()
+                if !vm.saveProject() {
+                    showSaveAsPanel()
+                }
             } label: {
                 Label("Save", systemImage: "square.and.arrow.down")
             }
@@ -71,6 +73,15 @@ struct ToolbarView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             Task { await vm.importVideo(url: url) }
+        }
+    }
+
+    private func showSaveAsPanel() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.init(filenameExtension: ProjectPersistenceService.fileExtension)!]
+        panel.nameFieldStringValue = "\(vm.project.title).\(ProjectPersistenceService.fileExtension)"
+        if panel.runModal() == .OK, let url = panel.url {
+            vm.saveProjectAs(to: url)
         }
     }
 

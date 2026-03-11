@@ -296,7 +296,6 @@ class ExportService {
 
     // MARK: - Pre-render subtitles as CGImage
 
-    /// Pre-render each block's subtitle as a transparent CGImage (avoids per-frame text layout)
     private func prerenderSubtitles(
         blocks: [LyricBlock],
         style: SubtitleStyle,
@@ -306,106 +305,129 @@ class ExportService {
         let width = Int(canvasSize.width)
         let height = Int(canvasSize.height)
 
-        let jaFont = NSFont(name: style.japaneseFontFamily, size: style.japaneseFontSize)
-            ?? NSFont.boldSystemFont(ofSize: style.japaneseFontSize)
+        // Resolve fonts — apply bold trait to Japanese
+        let fm = NSFontManager.shared
+        var jaFont = NSFont(name: style.japaneseFontFamily, size: style.japaneseFontSize)
+            ?? NSFont.systemFont(ofSize: style.japaneseFontSize)
+        jaFont = fm.convert(jaFont, toHaveTrait: .boldFontMask)
+
         let koFont = NSFont(name: style.koreanFontFamily, size: style.koreanFontSize)
             ?? NSFont.systemFont(ofSize: style.koreanFontSize)
-        let textColor = NSColor(Color(hex: style.textColorHex)).cgColor
-        let outlineColor = NSColor(Color(hex: style.outlineColorHex)).cgColor
+
+        let textColor = NSColor(Color(hex: style.textColorHex))
+        let outlineColor = NSColor(Color(hex: style.outlineColorHex))
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+
+        let outlineR = max(style.outlineWidth, 1.0) // outline radius in pixels
 
         for block in blocks {
             guard block.hasTimingData else { continue }
 
-            let colorSpace = CGColorSpaceCreateDeviceRGB()
-            guard let ctx = CGContext(
-                data: nil, width: width, height: height,
-                bitsPerComponent: 8, bytesPerRow: width * 4,
-                space: colorSpace,
-                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-            ) else { continue }
+            let image = NSImage(size: NSSize(width: width, height: height))
+            image.lockFocus()
 
-            // CG origin is bottom-left
-            let jaAttrString = NSAttributedString(string: block.japanese, attributes: [
-                .font: jaFont,
-                .foregroundColor: NSColor(cgColor: textColor) ?? .white
-            ])
-            let koAttrString = NSAttributedString(string: block.korean, attributes: [
-                .font: koFont,
-                .foregroundColor: NSColor(cgColor: textColor) ?? .white
-            ])
+            guard NSGraphicsContext.current != nil else {
+                image.unlockFocus()
+                continue
+            }
 
             let maxTextWidth = canvasSize.width - 60
-            let jaSize = jaAttrString.boundingRect(
-                with: CGSize(width: maxTextWidth, height: 500),
-                options: [.usesLineFragmentOrigin]
+
+            // Measure text sizes using fill attrs (no stroke — stroke changes metrics)
+            let jaFillAttrs: [NSAttributedString.Key: Any] = [
+                .font: jaFont,
+                .foregroundColor: textColor,
+                .paragraphStyle: paragraphStyle
+            ]
+            let koFillAttrs: [NSAttributedString.Key: Any] = [
+                .font: koFont,
+                .foregroundColor: textColor,
+                .paragraphStyle: paragraphStyle
+            ]
+
+            let jaStr = NSAttributedString(string: block.japanese, attributes: jaFillAttrs)
+            let koStr = NSAttributedString(string: block.korean, attributes: koFillAttrs)
+
+            let jaSize = jaStr.boundingRect(
+                with: NSSize(width: maxTextWidth, height: 500),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
             ).size
-            let koSize = koAttrString.boundingRect(
-                with: CGSize(width: maxTextWidth, height: 500),
-                options: [.usesLineFragmentOrigin]
+            let koSize = koStr.boundingRect(
+                with: NSSize(width: maxTextWidth, height: 500),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
             ).size
 
-            // Y positions (CG: origin bottom-left)
+            // Y positions (NSImage origin = bottom-left)
             let koY = style.bottomMargin
             let jaY = koY + koSize.height + style.lineSpacing
 
-            // Draw with outline: draw text twice — stroke then fill
-            ctx.saveGState()
+            let koRect = NSRect(
+                x: (canvasSize.width - maxTextWidth) / 2,
+                y: koY,
+                width: maxTextWidth, height: koSize.height + 10
+            )
+            let jaRect = NSRect(
+                x: (canvasSize.width - maxTextWidth) / 2,
+                y: jaY,
+                width: maxTextWidth, height: jaSize.height + 10
+            )
 
-            // Korean outline + fill
-            let koX = (canvasSize.width - koSize.width) / 2
-            drawOutlinedText(ctx: ctx, attrString: koAttrString,
-                           at: CGPoint(x: koX, y: koY),
-                           size: CGSize(width: maxTextWidth, height: koSize.height + 10),
-                           outlineColor: outlineColor, outlineWidth: style.outlineWidth)
+            // --- Outline pass: draw text in outlineColor at offsets around origin ---
+            let outlineJaAttrs: [NSAttributedString.Key: Any] = [
+                .font: jaFont,
+                .foregroundColor: outlineColor,
+                .paragraphStyle: paragraphStyle
+            ]
+            let outlineKoAttrs: [NSAttributedString.Key: Any] = [
+                .font: koFont,
+                .foregroundColor: outlineColor,
+                .paragraphStyle: paragraphStyle
+            ]
+            let outlineJaStr = NSAttributedString(string: block.japanese, attributes: outlineJaAttrs)
+            let outlineKoStr = NSAttributedString(string: block.korean, attributes: outlineKoAttrs)
 
-            // Japanese outline + fill
-            let jaX = (canvasSize.width - jaSize.width) / 2
-            drawOutlinedText(ctx: ctx, attrString: jaAttrString,
-                           at: CGPoint(x: jaX, y: jaY),
-                           size: CGSize(width: maxTextWidth, height: jaSize.height + 10),
-                           outlineColor: outlineColor, outlineWidth: style.outlineWidth)
+            let step: CGFloat = max(1.0, outlineR / 3.0)
+            for dx in stride(from: -outlineR, through: outlineR, by: step) {
+                for dy in stride(from: -outlineR, through: outlineR, by: step) {
+                    if dx * dx + dy * dy > outlineR * outlineR { continue }
+                    outlineJaStr.draw(in: jaRect.offsetBy(dx: dx, dy: dy))
+                    outlineKoStr.draw(in: koRect.offsetBy(dx: dx, dy: dy))
+                }
+            }
 
-            ctx.restoreGState()
+            // --- Shadow pass ---
+            if style.shadowEnabled {
+                let shadowAttrs: [NSAttributedString.Key: Any] = [
+                    .font: jaFont,
+                    .foregroundColor: NSColor(white: 0, alpha: 0.5),
+                    .paragraphStyle: paragraphStyle
+                ]
+                let shadowKoAttrs: [NSAttributedString.Key: Any] = [
+                    .font: koFont,
+                    .foregroundColor: NSColor(white: 0, alpha: 0.5),
+                    .paragraphStyle: paragraphStyle
+                ]
+                let off: CGFloat = 3
+                NSAttributedString(string: block.japanese, attributes: shadowAttrs)
+                    .draw(in: jaRect.offsetBy(dx: off, dy: -off))
+                NSAttributedString(string: block.korean, attributes: shadowKoAttrs)
+                    .draw(in: koRect.offsetBy(dx: off, dy: -off))
+            }
 
-            if let image = ctx.makeImage() {
-                result[block.id] = image
+            // --- Fill pass: draw main text on top ---
+            jaStr.draw(in: jaRect)
+            koStr.draw(in: koRect)
+
+            image.unlockFocus()
+
+            if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                result[block.id] = cgImage
             }
         }
 
         return result
-    }
-
-    private func drawOutlinedText(
-        ctx: CGContext,
-        attrString: NSAttributedString,
-        at point: CGPoint,
-        size: CGSize,
-        outlineColor: CGColor,
-        outlineWidth: Double
-    ) {
-        let line = CTLineCreateWithAttributedString(attrString)
-        let runs = CTLineGetGlyphRuns(line) as! [CTRun]
-
-        // Draw outline
-        ctx.saveGState()
-        ctx.setTextDrawingMode(.stroke)
-        ctx.setStrokeColor(outlineColor)
-        ctx.setLineWidth(CGFloat(outlineWidth * 2))
-        ctx.setLineJoin(.round)
-        ctx.textPosition = point
-        for run in runs {
-            CTRunDraw(run, ctx, CFRange())
-        }
-        ctx.restoreGState()
-
-        // Draw fill
-        ctx.saveGState()
-        ctx.setTextDrawingMode(.fill)
-        ctx.textPosition = point
-        for run in runs {
-            CTRunDraw(run, ctx, CFRange())
-        }
-        ctx.restoreGState()
     }
 
     // MARK: - Composite subtitle image onto video frame

@@ -273,17 +273,21 @@ class ProjectViewModel: ObservableObject {
 
     // MARK: - Persistence
 
-    func saveProject() {
+    /// Returns true if already has a file URL (saved in-place), false if caller should show Save As panel
+    @discardableResult
+    func saveProject() -> Bool {
+        guard let url = projectFileURL else {
+            // No file URL yet — caller should present Save As dialog
+            return false
+        }
         do {
-            if let url = projectFileURL {
-                try ProjectPersistenceService.save(project, to: url)
-            } else {
-                try ProjectPersistenceService.autoSave(project)
-            }
+            try ProjectPersistenceService.save(project, to: url)
             isDirty = false
             statusMessage = "Project saved."
+            return true
         } catch {
             showError(error.localizedDescription)
+            return false
         }
     }
 
