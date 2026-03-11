@@ -2,21 +2,46 @@ import SwiftUI
 import AVKit
 import AppKit
 
-/// NSViewRepresentable wrapper for AVPlayerView (avoids SwiftUI VideoPlayer crash outside .app bundle)
-struct NativeVideoPlayerView: NSViewRepresentable {
+/// Renders AVPlayerLayer directly — gives us control over gravity and frame
+struct PlayerLayerView: NSViewRepresentable {
     let player: AVPlayer
 
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
+    func makeNSView(context: Context) -> PlayerHostView {
+        let view = PlayerHostView()
         view.player = player
-        view.controlsStyle = .none
-        view.showsFullScreenToggleButton = false
         return view
     }
 
-    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+    func updateNSView(_ nsView: PlayerHostView, context: Context) {
         if nsView.player !== player {
             nsView.player = player
+        }
+    }
+
+    class PlayerHostView: NSView {
+        var player: AVPlayer? {
+            didSet { playerLayer.player = player }
+        }
+
+        private let playerLayer = AVPlayerLayer()
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            layer?.addSublayer(playerLayer)
+            playerLayer.videoGravity = .resizeAspectFill
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError()
+        }
+
+        override func layout() {
+            super.layout()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            playerLayer.frame = bounds
+            CATransaction.commit()
         }
     }
 }
@@ -27,31 +52,14 @@ struct VideoPreviewView: View {
     var body: some View {
         ZStack {
             if let player = vm.player {
-                GeometryReader { geo in
-                    ZStack {
-                        NativeVideoPlayerView(player: player)
-
-                        // Crop preview overlay
-                        if vm.project.videoMetadata.isLandscape {
-                            CropOverlayView(
-                                videoSize: CGSize(
-                                    width: CGFloat(vm.project.videoMetadata.width),
-                                    height: CGFloat(vm.project.videoMetadata.height)
-                                ),
-                                cropSettings: vm.project.cropSettings,
-                                containerSize: geo.size
-                            )
-                        }
-
-                        // Subtitle overlay
-                        if let block = vm.currentBlock {
-                            SubtitleOverlayView(
-                                block: block,
-                                style: vm.project.subtitleStyle
-                            )
-                        }
-                    }
-                }
+                // True vertical crop preview
+                CroppedVideoPreview(
+                    player: player,
+                    videoMetadata: vm.project.videoMetadata,
+                    cropSettings: vm.project.cropSettings,
+                    subtitleStyle: vm.project.subtitleStyle,
+                    currentBlock: vm.currentBlock
+                )
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "film")
@@ -70,70 +78,115 @@ struct VideoPreviewView: View {
     }
 }
 
-struct CropOverlayView: View {
-    let videoSize: CGSize
+/// Shows the video scaled-to-fill into a 9:16 container with crop offset applied
+struct CroppedVideoPreview: View {
+    let player: AVPlayer
+    let videoMetadata: VideoMetadata
     let cropSettings: CropSettings
-    let containerSize: CGSize
+    let subtitleStyle: SubtitleStyle
+    let currentBlock: LyricBlock?
 
     var body: some View {
-        GeometryReader { _ in
-            let targetRatio = CGFloat(cropSettings.outputWidth) / CGFloat(cropSettings.outputHeight)
-            let displayScale = min(containerSize.width / videoSize.width, containerSize.height / videoSize.height)
-            let displayW = videoSize.width * displayScale
-            let displayH = videoSize.height * displayScale
-
-            let cropDisplayH = displayH
-            let cropDisplayW = cropDisplayH * targetRatio
-            let maxOffset = (displayW - cropDisplayW) / 2.0
-            let offsetX = CGFloat(cropSettings.horizontalOffset) * maxOffset
-
-            let cropX = (containerSize.width - cropDisplayW) / 2.0 + offsetX
-            let cropY = (containerSize.height - cropDisplayH) / 2.0
+        GeometryReader { geo in
+            let containerSize = geo.size
+            // Fit a 9:16 rectangle into the available container
+            let targetAspect: CGFloat = 9.0 / 16.0
+            let previewSize = fitSize(aspect: targetAspect, into: containerSize)
 
             ZStack {
-                Color.black.opacity(0.4)
-                    .mask(
-                        Rectangle()
-                            .overlay(
-                                Rectangle()
-                                    .frame(width: cropDisplayW, height: cropDisplayH)
-                                    .position(x: cropX + cropDisplayW / 2, y: cropY + cropDisplayH / 2)
-                                    .blendMode(.destinationOut)
-                            )
-                            .compositingGroup()
-                    )
+                Color.black
 
-                Rectangle()
-                    .stroke(Color.white, lineWidth: 2)
-                    .frame(width: cropDisplayW, height: cropDisplayH)
-                    .position(x: cropX + cropDisplayW / 2, y: cropY + cropDisplayH / 2)
+                // 9:16 preview frame
+                ZStack {
+                    croppedVideo(previewSize: previewSize)
+                        .frame(width: previewSize.width, height: previewSize.height)
+                        .clipped()
+
+                    // Subtitle overlay — positioned relative to the 9:16 frame
+                    if let block = currentBlock {
+                        SubtitleOverlayView(
+                            block: block,
+                            style: subtitleStyle,
+                            previewHeight: previewSize.height,
+                            outputHeight: CGFloat(cropSettings.outputHeight)
+                        )
+                    }
+                }
+                .frame(width: previewSize.width, height: previewSize.height)
+                .clipShape(Rectangle())
             }
-            .allowsHitTesting(false)
         }
+    }
+
+    /// The video layer, scaled to fill the 9:16 preview and offset by crop sliders
+    @ViewBuilder
+    private func croppedVideo(previewSize: CGSize) -> some View {
+        let srcW = CGFloat(max(videoMetadata.width, 1))
+        let srcH = CGFloat(max(videoMetadata.height, 1))
+        let targetW = previewSize.width
+        let targetH = previewSize.height
+
+        // Scale to fill (cover): use the larger scale factor
+        let scaleX = targetW / srcW
+        let scaleY = targetH / srcH
+        let scale = max(scaleX, scaleY)
+
+        let scaledW = srcW * scale
+        let scaledH = srcH * scale
+
+        // Overflow that can be panned
+        let overflowX = scaledW - targetW
+        let overflowY = scaledH - targetH
+
+        // Convert -1..1 offset to pixel shift (-overflow/2 .. +overflow/2)
+        let offsetX = -CGFloat(cropSettings.horizontalOffset) * overflowX / 2.0
+        let offsetY = -CGFloat(cropSettings.verticalOffset) * overflowY / 2.0
+
+        PlayerLayerView(player: player)
+            .frame(width: scaledW, height: scaledH)
+            .offset(x: offsetX, y: offsetY)
+    }
+
+    private func fitSize(aspect: CGFloat, into container: CGSize) -> CGSize {
+        let byWidth = CGSize(width: container.width, height: container.width / aspect)
+        let byHeight = CGSize(width: container.height * aspect, height: container.height)
+
+        if byWidth.height <= container.height {
+            return byWidth
+        }
+        return byHeight
     }
 }
 
 struct SubtitleOverlayView: View {
     let block: LyricBlock
     let style: SubtitleStyle
+    let previewHeight: CGFloat
+    let outputHeight: CGFloat
+
+    /// Scale factor from output pixels to preview pixels
+    private var previewScale: CGFloat {
+        previewHeight / outputHeight
+    }
 
     var body: some View {
-        VStack(spacing: style.lineSpacing) {
+        VStack(spacing: style.lineSpacing * previewScale) {
             Text(block.japanese)
-                .font(.system(size: style.japaneseFontSize, weight: .bold))
+                .font(.custom(style.japaneseFontFamily, size: style.japaneseFontSize * previewScale))
+                .fontWeight(.bold)
                 .foregroundColor(style.textColor)
-                .shadow(color: style.outlineColor.opacity(0.8), radius: style.outlineWidth)
-                .shadow(color: style.outlineColor.opacity(0.6), radius: style.outlineWidth * 0.5)
+                .shadow(color: style.outlineColor.opacity(0.9), radius: style.outlineWidth * previewScale)
+                .shadow(color: style.outlineColor.opacity(0.7), radius: style.outlineWidth * previewScale * 0.5)
 
             Text(block.korean)
-                .font(.system(size: style.koreanFontSize))
+                .font(.custom(style.koreanFontFamily, size: style.koreanFontSize * previewScale))
                 .foregroundColor(style.textColor)
-                .shadow(color: style.outlineColor.opacity(0.8), radius: style.outlineWidth)
-                .shadow(color: style.outlineColor.opacity(0.6), radius: style.outlineWidth * 0.5)
+                .shadow(color: style.outlineColor.opacity(0.9), radius: style.outlineWidth * previewScale)
+                .shadow(color: style.outlineColor.opacity(0.7), radius: style.outlineWidth * previewScale * 0.5)
         }
         .multilineTextAlignment(.center)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 20 * previewScale)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .padding(.bottom, style.bottomMargin / 10)
+        .padding(.bottom, style.bottomMargin * previewScale)
     }
 }

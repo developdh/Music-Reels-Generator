@@ -13,7 +13,6 @@ struct InspectorPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Tab selector
             Picker("", selection: $selectedTab) {
                 ForEach(InspectorTab.allCases, id: \.self) { tab in
                     Text(tab.rawValue).tag(tab)
@@ -150,22 +149,8 @@ struct CropInspectorView: View {
             Text("Crop Settings")
                 .font(.headline)
 
-            GroupBox("Mode") {
-                Picker("Crop Mode", selection: $vm.project.cropSettings.mode) {
-                    ForEach(CropMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue.capitalized).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: vm.project.cropSettings.mode) { _, _ in
-                    vm.isDirty = true
-                }
-            }
-
-            GroupBox("Position") {
+            GroupBox("Horizontal Position") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Horizontal Offset")
-                        .font(.caption)
                     HStack {
                         Text("L")
                             .font(.caption2)
@@ -179,8 +164,31 @@ struct CropInspectorView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    Button("Center") {
+                    Button("Center H") {
                         vm.project.cropSettings.horizontalOffset = 0
+                        vm.isDirty = true
+                    }
+                    .controlSize(.small)
+                }
+            }
+
+            GroupBox("Vertical Position") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("T")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Slider(value: $vm.project.cropSettings.verticalOffset, in: -1...1)
+                            .onChange(of: vm.project.cropSettings.verticalOffset) { _, _ in
+                                vm.isDirty = true
+                            }
+                        Text("B")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Button("Center V") {
+                        vm.project.cropSettings.verticalOffset = 0
                         vm.isDirty = true
                     }
                     .controlSize(.small)
@@ -205,29 +213,49 @@ struct CropInspectorView: View {
 struct StyleInspectorView: View {
     @EnvironmentObject var vm: ProjectViewModel
 
+    private var allFonts: [String] { FontUtility.allFamilies }
+    private var jaDefaults: [String] { FontUtility.japaneseFamilies }
+    private var koDefaults: [String] { FontUtility.koreanFamilies }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Subtitle Style")
                 .font(.headline)
 
-            GroupBox("Font Sizes") {
+            GroupBox("Japanese Font") {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Japanese:")
-                            .frame(width: 70, alignment: .trailing)
-                        Slider(value: $vm.project.subtitleStyle.japaneseFontSize, in: 20...80)
-                        Text("\(Int(vm.project.subtitleStyle.japaneseFontSize))")
-                            .monospacedDigit()
-                            .frame(width: 30)
-                    }
+                    FontFamilyPicker(
+                        selection: $vm.project.subtitleStyle.japaneseFontFamily,
+                        recommended: jaDefaults,
+                        allFonts: allFonts
+                    )
 
                     HStack {
-                        Text("Korean:")
-                            .frame(width: 70, alignment: .trailing)
-                        Slider(value: $vm.project.subtitleStyle.koreanFontSize, in: 16...60)
+                        Text("Size:")
+                            .frame(width: 36, alignment: .trailing)
+                        Slider(value: $vm.project.subtitleStyle.japaneseFontSize, in: 24...120, step: 1)
+                        Text("\(Int(vm.project.subtitleStyle.japaneseFontSize))")
+                            .monospacedDigit()
+                            .frame(width: 32)
+                    }
+                }
+            }
+
+            GroupBox("Korean Font") {
+                VStack(alignment: .leading, spacing: 8) {
+                    FontFamilyPicker(
+                        selection: $vm.project.subtitleStyle.koreanFontFamily,
+                        recommended: koDefaults,
+                        allFonts: allFonts
+                    )
+
+                    HStack {
+                        Text("Size:")
+                            .frame(width: 36, alignment: .trailing)
+                        Slider(value: $vm.project.subtitleStyle.koreanFontSize, in: 20...100, step: 1)
                         Text("\(Int(vm.project.subtitleStyle.koreanFontSize))")
                             .monospacedDigit()
-                            .frame(width: 30)
+                            .frame(width: 32)
                     }
                 }
             }
@@ -235,10 +263,12 @@ struct StyleInspectorView: View {
             GroupBox("Appearance") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Outline Width:")
-                        Slider(value: $vm.project.subtitleStyle.outlineWidth, in: 0...8)
-                        Text("\(Int(vm.project.subtitleStyle.outlineWidth))")
-                            .frame(width: 20)
+                        Text("Outline:")
+                            .frame(width: 52, alignment: .trailing)
+                        Slider(value: $vm.project.subtitleStyle.outlineWidth, in: 0...8, step: 0.5)
+                        Text("\(String(format: "%.1f", vm.project.subtitleStyle.outlineWidth))")
+                            .monospacedDigit()
+                            .frame(width: 28)
                     }
 
                     Toggle("Shadow", isOn: $vm.project.subtitleStyle.shadowEnabled)
@@ -248,17 +278,21 @@ struct StyleInspectorView: View {
             GroupBox("Position") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Bottom Margin:")
-                        Slider(value: $vm.project.subtitleStyle.bottomMargin, in: 50...500)
+                        Text("Bottom:")
+                            .frame(width: 52, alignment: .trailing)
+                        Slider(value: $vm.project.subtitleStyle.bottomMargin, in: 50...500, step: 5)
                         Text("\(Int(vm.project.subtitleStyle.bottomMargin))")
-                            .frame(width: 30)
+                            .monospacedDigit()
+                            .frame(width: 32)
                     }
 
                     HStack {
-                        Text("Line Spacing:")
-                        Slider(value: $vm.project.subtitleStyle.lineSpacing, in: 0...30)
+                        Text("Gap:")
+                            .frame(width: 52, alignment: .trailing)
+                        Slider(value: $vm.project.subtitleStyle.lineSpacing, in: 0...40, step: 1)
                         Text("\(Int(vm.project.subtitleStyle.lineSpacing))")
-                            .frame(width: 20)
+                            .monospacedDigit()
+                            .frame(width: 32)
                     }
                 }
             }
@@ -266,6 +300,35 @@ struct StyleInspectorView: View {
         .onChange(of: vm.project.subtitleStyle) { _, _ in
             vm.isDirty = true
         }
+    }
+}
+
+/// A font picker that shows recommended fonts first, then all system fonts
+struct FontFamilyPicker: View {
+    @Binding var selection: String
+    let recommended: [String]
+    let allFonts: [String]
+
+    var body: some View {
+        Picker("Font", selection: $selection) {
+            if !recommended.isEmpty {
+                Section("Recommended") {
+                    ForEach(recommended, id: \.self) { font in
+                        Text(font)
+                            .font(.custom(font, size: 13))
+                            .tag(font)
+                    }
+                }
+                Divider()
+            }
+
+            Section("All Fonts") {
+                ForEach(allFonts, id: \.self) { font in
+                    Text(font).tag(font)
+                }
+            }
+        }
+        .labelsHidden()
     }
 }
 
