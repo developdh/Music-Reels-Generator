@@ -2,19 +2,22 @@
 
 A macOS desktop app for generating vertical music lyric videos (Reels / Shorts) from an existing music video file and bilingual (Japanese + Korean) lyrics.
 
+An example source video (`GreenlightsSerenade3.mp4`) is included in the repository for testing.
+
 ## Features
 
-- **Video Import** — Load any local video file (.mp4, .mov, .avi), extract metadata, preview in-app
-- **Bilingual Lyrics Parser** — Paste Japanese + Korean lyrics in a simple block format
-- **Auto-Alignment (Monotonic DP)** — Uses whisper.cpp to transcribe Japanese audio and aligns to lyric blocks via beam-search DP with monotonic constraint. Prevents cascading drift that worsens toward the end of a song
+- **Video Import** — Load any local video file (.mp4, .mov, .avi), extract metadata (dimensions, duration, FPS, file size), preview in-app
+- **Bilingual Lyrics Parser** — Paste Japanese + Korean lyrics in a simple block format (2 lines per block, blank line separator)
+- **Auto-Alignment (Monotonic DP)** — Uses whisper.cpp to transcribe Japanese audio and aligns to lyric blocks via beam-search DP (width 50) with monotonic constraint. Prevents cascading drift that worsens toward the end of a song
 - **Confidence Scoring** — Each block gets a 0–1 confidence score. Low-confidence blocks are visually flagged (orange border) for manual review. Interpolated blocks show ~0.05 confidence
 - **Anchor System** — High-confidence matches (>0.6) and manually adjusted blocks become anchors. Unmatched blocks are interpolated proportionally between anchors based on text length
 - **Manual Timing Correction** — Set start/end times from playback position, shift all following blocks by a delta, fine-grained nudge (±0.1s / ±0.5s), keyboard shortcuts (Cmd+[ / Cmd+])
 - **Video Trimming** — Non-destructive trim in/out to cut intros, outros, or shorten the final reel. Trim range is enforced in preview playback (auto-stop at trim end, jump to trim start on play) and applied during export via FFmpeg seek
 - **Vertical Reframing** — Crop any aspect ratio video to 9:16 with adjustable horizontal and vertical offset sliders
-- **Subtitle Styling** — Independent Japanese/Korean font family selection (with recommended CJK fonts), font size, outline width, shadow, bottom margin, line spacing
-- **Unified Preview/Export Rendering** — Both preview and export use the same Core Graphics subtitle renderer (`SubtitleRenderer`), rendering at 1080x1920 canvas. Preview displays a scaled-down version, ensuring pixel-identical typography
-- **Two-Stage Export** — Stage 1: FFmpeg trim + crop/scale to 1080x1920. Stage 2: AVAssetReader/Writer frame-by-frame subtitle burn-in with pre-rendered CGImage overlays
+- **Subtitle Styling** — Independent Japanese/Korean font family selection (with recommended CJK fonts), font size, per-language text color with color pickers and preset swatches, outline width, shadow, bottom margin (up to screen center), line spacing
+- **Metadata Overlay** — Optional top-left title/artist overlay with dark rounded background box. Independent font, size, and color controls for title and artist. Configurable background opacity, corner radius, padding, and position
+- **Unified Preview/Export Rendering** — Both preview and export use the same Core Graphics subtitle renderer (`SubtitleRenderer`), rendering at 1080x1920 canvas. Preview displays a scaled-down version, ensuring pixel-identical typography for both subtitles and metadata overlay
+- **Two-Stage Export** — Stage 1: FFmpeg trim + crop/scale to 1080x1920. Stage 2: AVAssetReader/Writer frame-by-frame burn-in of metadata overlay + subtitle CGImage overlays
 - **Project Persistence** — Save/load projects as `.mreels` JSON files with backward compatibility for older formats
 
 ## Requirements
@@ -64,6 +67,20 @@ open MusicReelsGenerator.xcodeproj
 ```
 
 Then press Cmd+R to build and run.
+
+## Quick Start with Example Video
+
+```bash
+./setup.sh       # Install FFmpeg, whisper-cpp, download model
+./build.sh       # Build the app
+open ".build/Music Reels Generator.app"
+```
+
+1. Import `GreenlightsSerenade3.mp4` from the project root
+2. Paste bilingual lyrics (Japanese + Korean)
+3. Click "Auto-Align" to match lyrics to audio
+4. Adjust crop, trim, subtitle styling, and metadata overlay
+5. Export the final vertical video
 
 ## Usage
 
@@ -132,26 +149,40 @@ In the Inspector > Crop tab:
 In the Inspector > Style tab:
 - Choose Japanese and Korean font families independently (recommended CJK fonts listed first)
 - Adjust font sizes (JP: 24–120, KR: 20–100)
+- Set per-language text colors using color pickers or preset swatches (White, Cyan, Yellow, Mint, Pink)
 - Set outline width (0–8 px), toggle shadow
-- Adjust bottom margin and line spacing between Japanese/Korean lines
+- Adjust bottom margin (50–960, up to screen center) and line spacing between Japanese/Korean lines
 - Preview uses the same renderer as export, so what you see is what you get
 
-### 8. Export
+### 8. Title / Artist Overlay
+
+In the Inspector > Overlay tab:
+- Toggle the overlay on/off
+- Enter song title and artist name
+- Choose independent fonts, sizes, and colors for title and artist
+- Adjust background box opacity (0–100%) and corner radius
+- Set top and left margins to position the overlay
+- Configure horizontal/vertical padding and line spacing
+- The overlay appears in the top-left area with a dark rounded background box
+- Preview and export render identically using the shared `SubtitleRenderer`
+
+### 9. Export
 
 Click "Export" in the toolbar. Choose a save location. The app will:
 1. Trim and crop the video to 1080x1920 via FFmpeg (`-ss` seek + `-t` duration, H.264 CRF 18, AAC 192k)
 2. Remap lyric timing to trim-relative coordinates (blocks outside the range are omitted, overlapping blocks are clamped)
-3. Read the cropped video frame-by-frame with AVAssetReader
-4. Composite pre-rendered subtitle images onto each frame using Core Graphics
-5. Write the final MP4 with AVAssetWriter
-6. Progress is shown in the bottom status bar
+3. Pre-render the metadata overlay as a single CGImage (composited onto every frame)
+4. Read the cropped video frame-by-frame with AVAssetReader
+5. Composite metadata overlay + active subtitle images onto each frame using Core Graphics
+6. Write the final MP4 with AVAssetWriter
+7. Progress is shown in the bottom status bar
 
-### 9. Save & Load
+### 10. Save & Load
 
 - **Save**: Click "Save" in the toolbar or Cmd+S. If no file exists yet, a Save As dialog appears
 - **Open**: Click "Open" in the toolbar or Cmd+O to load a `.mreels` project file
 - **Save As**: File > Save Project As (Cmd+Shift+S)
-- All settings are preserved: lyrics, timing, crop, trim, subtitle style, project title
+- All settings are preserved: lyrics, timing, crop, trim, subtitle style, metadata overlay, project title
 
 ## Keyboard Shortcuts
 
@@ -177,12 +208,13 @@ MusicReelsGenerator/
 ├── App/
 │   └── MusicReelsGeneratorApp     # @main entry point, window config, menu commands
 ├── Models/
-│   ├── Project                    # Root aggregate (video, metadata, blocks, styles, trim)
+│   ├── Project                    # Root aggregate (video, metadata, blocks, styles, trim, overlay)
 │   ├── LyricBlock                 # Japanese + Korean text, timing, confidence, anchor flag
 │   ├── VideoMetadata              # Dimensions, duration, FPS, file size
 │   ├── CropSettings               # 9:16 crop mode, H/V offsets, output resolution
 │   ├── TrimSettings               # Trim in/out times, validation, duration
-│   └── SubtitleStyle              # Fonts, sizes, colors, outline, shadow, margins
+│   ├── SubtitleStyle              # Per-language fonts, sizes, colors, outline, shadow, margins
+│   └── MetadataOverlaySettings    # Title/artist text, fonts, colors, background box, position
 ├── Services/
 │   ├── AudioExtractionService     # FFmpeg → 16kHz mono WAV for whisper
 │   ├── WhisperAlignmentService    # Transcription + monotonic DP beam-search alignment
@@ -196,13 +228,13 @@ MusicReelsGenerator/
 ├── Views/
 │   ├── ContentView                # 3-panel HSplitView layout
 │   ├── LyricsPanelView            # Left: block list with confidence badges, lyrics input
-│   ├── VideoPreviewView           # Center: AVPlayerLayer + crop + shared-renderer subtitles
+│   ├── VideoPreviewView           # Center: AVPlayerLayer + crop + metadata overlay + subtitles
 │   ├── PlaybackControlsView       # Scrubber with trim indicator, play/pause, timing setters
-│   ├── InspectorPanelView         # Right: Block / Trim / Crop / Style / Info tabs
+│   ├── InspectorPanelView         # Right: Block / Trim / Crop / Style / Overlay / Info tabs
 │   ├── ToolbarView                # Import, Align, Export, Open, Save buttons
 │   └── StatusBarView              # Export progress bar, status message, dirty indicator
 ├── Utilities/
-│   ├── SubtitleRenderer           # Shared Core Graphics renderer (preview + export identical)
+│   ├── SubtitleRenderer           # Shared Core Graphics renderer (subtitles + metadata overlay)
 │   ├── ProcessRunner              # Async Process wrapper, FFmpeg/Whisper path detection
 │   ├── JapaneseTextNormalizer     # Katakana→hiragana, Levenshtein + LCS similarity
 │   ├── TrimTimingUtility          # Source-absolute → trim-relative time conversion
@@ -238,8 +270,9 @@ The export pipeline uses a two-stage approach because Homebrew's FFmpeg lacks li
 
 **Stage 2: AVFoundation Frame-by-Frame Burn-In**
 - Pre-renders all subtitle blocks as CGImages via `SubtitleRenderer` (multi-pass outline + shadow + fill)
+- Pre-renders the metadata overlay as a single CGImage (title/artist with background box)
 - Lyric timing is remapped from source-absolute to trim-relative using `TrimTimingUtility`
-- Reads each frame with AVAssetReader, composites active subtitle CGImage, writes with AVAssetWriter
+- Reads each frame with AVAssetReader, composites metadata overlay + active subtitle CGImage, writes with AVAssetWriter
 - Audio is passed through on a background queue
 
 ## How Preview/Export Consistency Works
@@ -247,13 +280,14 @@ The export pipeline uses a two-stage approach because Homebrew's FFmpeg lacks li
 Both preview and export use the same `SubtitleRenderer` — a shared Core Graphics rendering engine:
 
 1. `SubtitleRenderer.renderBlock()` renders subtitle text at the canonical 1080x1920 export canvas
-2. Font resolution uses `NSFontDescriptor` with `.family` attribute (not `NSFont(name:)` which requires PostScript names)
-3. Japanese font gets bold trait via `NSFontManager`
-4. Multi-pass rendering: outline (offset grid) → shadow → fill
-5. Preview displays the resulting CGImage scaled down to fit the preview container
-6. Export composites the same CGImage at full resolution onto video frames
+2. `SubtitleRenderer.renderMetadataOverlay()` renders the title/artist overlay with background box at the same canvas
+3. Font resolution uses `NSFontDescriptor` with `.family` attribute (not `NSFont(name:)` which requires PostScript names)
+4. Japanese subtitle font gets bold trait via `NSFontManager`
+5. Multi-pass subtitle rendering: outline (offset grid) → shadow → fill
+6. Preview displays the resulting CGImages scaled down to fit the preview container
+7. Export composites the same CGImages at full resolution onto video frames
 
-This eliminates all mismatch between preview and export: same fonts, same outline, same wrapping, same positioning.
+This eliminates all mismatch between preview and export: same fonts, same outline, same wrapping, same positioning, same metadata overlay.
 
 ## Project File Format
 
@@ -261,11 +295,12 @@ Projects are saved as `.mreels` files (JSON with ISO 8601 dates). They store:
 - Source video path and cached metadata (dimensions, duration, FPS, file size)
 - Trim settings (start/end times)
 - Crop settings (horizontal/vertical offset, output resolution)
-- Subtitle style (fonts, sizes, colors, outline, shadow, margin, line spacing)
+- Subtitle style (per-language fonts, sizes, colors, outline, shadow, margin, line spacing)
+- Metadata overlay settings (title/artist text, fonts, colors, background box, position, padding)
 - All lyric blocks with timing, confidence scores, anchor/manual flags
 - Project title and created/updated timestamps
 
-Backward compatibility: older project files without `trimSettings` or `isAnchor` fields are handled via custom `Decodable` initializers that supply default values.
+Backward compatibility: older project files without `trimSettings`, `isAnchor`, `metadataOverlay`, or per-language text color fields are handled via custom `Decodable` initializers that supply default values.
 
 ## Limitations
 
