@@ -13,12 +13,15 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 - **Drift Detection** — Automatically detects runs of blocks with systematic positional drift (e.g., from chorus confusion) and re-anchors them against local segments
 - **Boundary Snap** — Post-alignment step that snaps block start/end times to nearest whisper segment edges for tighter subtitle timing
 - **Confidence Scoring** — Each block gets a 0–1 confidence score. Low-confidence blocks are visually flagged (orange border) for manual review. Interpolated blocks show ~0.05 confidence
-- **Anchor System** — High-confidence matches (>=0.6) and manually adjusted blocks become anchors. Unmatched blocks are interpolated proportionally between anchors based on kana text length
-- **Manual Timing Correction** — Set start/end times from playback position, shift all following blocks by a delta, fine-grained nudge (+-0.1s / +-0.5s), keyboard shortcuts (Cmd+[ / Cmd+])
-- **Video Trimming** — Non-destructive trim in/out to cut intros, outros, or shorten the final reel. Trim range is enforced in preview playback (auto-stop at trim end, jump to trim start on play) and applied during export via FFmpeg seek
+- **Dual Anchor System** — Two anchor types: auto-anchors (grey lock, set by alignment based on textScore ≥ 0.6) and user anchors (blue lock, set manually). Only user anchors and fully manually-adjusted blocks are used as reference points for piecewise correction
+- **Piecewise Anchor Correction** — Distributes timing proportionally between trusted anchor pairs (user-set or both start/end manually adjusted) by Japanese text character count. Runs automatically after alignment if user anchors exist. Also available as manual "전체 구간 재보정" and "이전앵커~다음앵커 재보정" operations
+- **Local Re-Alignment** — Re-runs whisper-cpp alignment on a bounded region between surrounding anchors using cached transcription segments, without re-transcribing the full audio
+- **Manual Timing Correction** — Set start/end times from playback position, shift all following blocks by a delta, fine-grained nudge (+-0.1s / +-0.5s), keyboard shortcuts (Cmd+[ / Cmd+]). Granular tracking of which boundary (start/end) was manually adjusted
+- **Video Trimming** — Non-destructive trim in/out to cut intros, outros, or shorten the final reel. Trim range is enforced in preview playback (auto-stop at trim end, loop to trim start on play) and applied during export via FFmpeg seek
 - **Vertical Reframing** — Crop any aspect ratio video to 9:16 with adjustable horizontal and vertical offset sliders. Cover-mode scaling ensures no black bars
 - **Subtitle Styling** — Independent Japanese/Korean font family selection (with recommended CJK fonts: Hiragino Sans, Apple SD Gothic Neo, etc.), font size (JP: 24–120, KR: 20–100), per-language text color with color pickers and 5 preset swatches, outline width (0–8 px), shadow toggle, bottom margin (50–960, up to screen center), line spacing
 - **Metadata Overlay** — Optional top-left title/artist overlay with dark rounded background box. Independent font, size, and color controls for title and artist. Configurable background opacity, corner radius, padding, and position margins
+- **Style Presets** — Save, load, rename, duplicate, and delete reusable style presets (subtitle + overlay styling). Presets persist in Application Support and are reusable across all projects. Presets capture visual styling only, excluding song-specific text content (title/artist text)
 - **Unified Preview/Export Rendering** — Both preview and export use the same Core Graphics subtitle renderer (`SubtitleRenderer`), rendering at 1080x1920 canvas with multi-pass outline/shadow/fill. Preview displays a scaled-down version, ensuring pixel-identical typography
 - **Two-Stage Export** — Stage 1: FFmpeg trim + crop/scale to 1080x1920 (H.264 CRF 18, AAC 192k). Stage 2: AVAssetReader/Writer frame-by-frame burn-in of metadata overlay + subtitle CGImage overlays
 - **Project Persistence** — Save/load projects as `.mreels` JSON files with backward compatibility for older formats (missing fields get defaults via custom `Decodable` initializers)
@@ -156,6 +159,7 @@ The **Recommended** mode is selected by default and consistently produces the be
 8. Drift detection — identifies runs of 3+ weak blocks with systematic positional shift and re-anchors them
 9. Anchor-based proportional interpolation (by kana character count, starting from vocal onset)
 10. Boundary snap — snaps block edges to nearest whisper segment boundaries (within 0.3s)
+11. Auto-correct between user anchors (if ≥ 2 exist) — piecewise proportional redistribution
 
 **Experimental Python pipeline (Exp modes):**
 1. Extract audio as 16kHz mono WAV (FFmpeg)
@@ -174,15 +178,18 @@ The **Recommended** mode is selected by default and consistently produces the be
 - Click "Set Now" for start/end time, or use Cmd+[ / Cmd+]
 - **Shift following blocks**: In the Inspector > Block > Correction section, use "Set Start & Shift Following" to move this block and all subsequent blocks by the same delta
 - **Fine-grained nudge**: Use +-0.1s / +-0.5s buttons to shift from the selected block onward
-- **Anchor toggle**: Mark a block as an anchor so it stays fixed during re-alignment
+- **Anchor operations**: Mark a block as a user anchor (blue lock) so it becomes a reference point for piecewise correction. Auto-anchors (grey lock) from alignment can be promoted to user anchors
+- **Piecewise correction**: Use "전체 앵커 구간 재보정" to redistribute timing between all user anchors, or "이전앵커~다음앵커 재보정" for the region surrounding the selected block
+- **Local re-alignment**: Re-run whisper alignment on just the region between surrounding anchors using cached segments
 - Manually adjusted blocks show a blue "Manual" badge; confidence is set to 1.0
+- When both start and end of a block are manually adjusted, it automatically qualifies as a trusted anchor
 
 ### 5. Trim Video
 
 In the Inspector > Trim tab:
 - Set trim start and end times using "Set to Current" or +-0.1s / +-1s nudge buttons
 - The trim bar shows a visual overview of the selected range (accent color indicator under scrubber)
-- Playback respects the trim range: stops at trim end, jumps to trim start when pressing play
+- Playback respects the trim range: stops at trim end, loops to trim start when pressing play at the end
 - "Reset Trim" restores the full video duration
 - The trimmed duration is shown in the playback controls
 
@@ -202,6 +209,7 @@ In the Inspector > Style tab:
 - Set per-language text colors using color pickers or preset swatches (White, Cyan, Yellow, Mint, Pink)
 - Set outline width (0–8 px), toggle shadow
 - Adjust bottom margin (50–960, up to screen center) and line spacing between Japanese/Korean lines
+- **Style presets**: Save the current style as a named preset for reuse. Apply presets from the dropdown, or manage (rename, duplicate, delete) in the preset manager. Presets capture subtitle + overlay styling but not song-specific text
 - Preview uses the same `SubtitleRenderer` as export — what you see is what you get
 
 ### 8. Title / Artist Overlay
@@ -234,7 +242,7 @@ Click "Export" in the toolbar. Choose a save location. The app will:
 - **Save**: Click "Save" in the toolbar or Cmd+S. If no file exists yet, a Save As dialog appears
 - **Open**: Click "Open" in the toolbar or Cmd+O to load a `.mreels` project file
 - **Save As**: File > Save Project As (Cmd+Shift+S)
-- All settings are preserved: lyrics, timing, crop, trim, subtitle style, metadata overlay, project title
+- All settings are preserved: lyrics, timing, crop, trim, subtitle style, metadata overlay, anchors, project title
 - Auto-save directory: `~/Library/Application Support/MusicReelsGenerator/`
 
 ## Keyboard Shortcuts
@@ -259,30 +267,32 @@ Click "Export" in the toolbar. Choose a save location. The app will:
 ```
 MusicReelsGenerator/
 ├── App/
-│   └── MusicReelsGeneratorApp     # @main, window config (1100x700 min), menu commands
+│   └── MusicReelsGeneratorApp     # @main, AppDelegate (key event monitor), window config
 ├── Models/
 │   ├── Project                    # Root aggregate: video, metadata, blocks, styles, trim, overlay
-│   ├── LyricBlock                 # Japanese + Korean text, timing, confidence, anchor/manual flags
+│   ├── LyricBlock                 # JP+KR text, timing, confidence, isAnchor/isUserAnchor, manual flags
 │   ├── VideoMetadata              # Dimensions, duration, FPS, file size, aspect ratio detection
 │   ├── CropSettings               # 9:16 crop mode, H/V offsets (-1..1), output resolution (1080x1920)
 │   ├── TrimSettings               # Trim in/out times, clamping, validation, duration
 │   ├── SubtitleStyle              # Per-language fonts/sizes/colors (hex), outline, shadow, margins
 │   ├── MetadataOverlaySettings    # Title/artist text, fonts, colors, background box, position/padding
-│   └── AlignmentQualityMode       # Recommended (production) + 3 experimental modes with parameters
+│   ├── AlignmentQualityMode       # Recommended (production) + 3 experimental modes with parameters
+│   └── StylePreset                # Reusable style snapshot (OverlayStyleSnapshot + SubtitleStyle)
 ├── Services/
 │   ├── AudioExtractionService     # FFmpeg -> 16kHz mono PCM WAV
 │   ├── WhisperAlignmentService    # Production: whisper-cpp + beam DP + drift detection + boundary snap
-│   ├── AdvancedAlignmentService   # Experimental: Python subprocess integration, JSON I/O, debug reporting
+│   ├── AdvancedAlignmentService   # Experimental: Python subprocess integration, JSON I/O
 │   ├── LyricsParserService        # Block-format bilingual parser (Japanese line, Korean line, blank)
 │   ├── ExportService              # Two-stage: FFmpeg trim+crop -> AVFoundation frame-by-frame burn-in
 │   ├── SubtitleRenderService      # ASS subtitle file generation with per-language styles
 │   ├── VideoService               # AVFoundation metadata extraction (handles rotated videos)
-│   └── ProjectPersistenceService  # JSON save/load (.mreels), backward-compatible Decodable
+│   ├── ProjectPersistenceService  # JSON save/load (.mreels), backward-compatible Decodable
+│   └── StylePresetStore           # Singleton preset library, JSON persistence in App Support
 ├── ViewModels/
-│   └── ProjectViewModel           # @MainActor ObservableObject: playback, alignment, export, persistence
+│   └── ProjectViewModel           # @MainActor ObservableObject: playback, alignment, anchors, export
 ├── Views/
 │   ├── ContentView                # 3-panel HSplitView (lyrics | preview | inspector)
-│   ├── LyricsPanelView            # Block list with confidence badges (green/orange/red/blue), lyrics input
+│   ├── LyricsPanelView            # Block list with confidence badges, anchor icons (blue/grey lock)
 │   ├── VideoPreviewView           # AVPlayerLayer + crop offset + metadata overlay + subtitle overlay
 │   ├── PlaybackControlsView       # Scrubber with trim indicator, play/pause, +-1s/+-5s, set timing
 │   ├── InspectorPanelView         # 6 tabs: Block / Trim / Crop / Style / Overlay / Info
@@ -290,7 +300,8 @@ MusicReelsGenerator/
 │   └── StatusBarView              # Export progress bar, status message, dirty indicator
 ├── Utilities/
 │   ├── SubtitleRenderer           # Shared Core Graphics renderer: renderBlock + renderMetadataOverlay
-│   ├── ProcessRunner              # Async Process wrapper, deadlock-free pipe draining, streaming stderr
+│   ├── ProcessRunner              # Async Process wrapper, deadlock-free pipe draining, stdin nullDevice
+│   ├── NativeTextEditor           # NSTextView wrapper with proper Cmd+V/C/X/A/Z support
 │   ├── JapaneseTextNormalizer     # Katakana->hiragana, Levenshtein distance, LCS similarity
 │   ├── TrimTimingUtility          # Source-absolute -> trim-relative time conversion + block filtering
 │   ├── TimeFormatter              # M:SS.CS, M:SS, H:MM:SS.CS (ASS) formats
@@ -299,7 +310,7 @@ MusicReelsGenerator/
 └── Resources/                     # Info.plist, entitlements
 
 Scripts/
-├── alignment_pipeline.py          # Experimental Python alignment: G2P, DTW, chunking, DP, collapse recovery
+├── alignment_pipeline.py          # Experimental Python alignment: G2P, DTW, chunking, DP
 ├── requirements.txt               # Python dependencies (openai-whisper, pykakasi, numpy)
 └── setup_alignment.sh             # One-command setup for experimental pipeline
 ```
@@ -327,6 +338,18 @@ The production alignment engine uses whisper-cpp for segment-level alignment wit
 8. **Anchor-Based Proportional Interpolation** — Unmatched blocks between anchors receive timing proportional to their Japanese text character count. Uses vocal onset (not 0:00) as the earliest valid start boundary
 
 9. **Boundary Snap** — Snaps block start/end times to the nearest whisper segment edge within 0.3s, aligning subtitle timing to actual speech onset/offset without changing which segment was matched
+
+10. **Auto-Correction** — If user anchors (≥ 2) exist, automatically runs piecewise proportional redistribution between user anchor pairs after alignment completes
+
+### Anchor System
+
+The app distinguishes two types of anchors:
+
+- **Auto-anchors** (grey lock icon) — Set by the alignment service on blocks with textScore ≥ 0.6. Used internally by the alignment service for reference during refinement and drift detection. Visible in the lyrics panel and inspector but not used for piecewise correction.
+
+- **User anchors** (blue lock icon) — Set manually by the user via the inspector's anchor controls. These are the reference points for piecewise correction operations. Auto-anchors can be promoted to user anchors.
+
+- **Trusted anchors** — Blocks that qualify as correction reference points: either user-anchored, or both start and end times manually adjusted. Used by `correctBetweenAllAnchors()` and `correctBetweenSurroundingAnchors()`.
 
 ### Experimental Pipelines (Exp: Segment / Refined / Hybrid)
 
@@ -398,9 +421,10 @@ Projects are saved as `.mreels` files (JSON with ISO 8601 dates, pretty-printed,
 - Crop settings (mode, horizontal/vertical offset, output resolution)
 - Subtitle style (per-language font families, sizes, text colors as hex, outline color/width, shadow, bottom margin, line spacing)
 - Metadata overlay settings (enabled flag, title/artist text, fonts, colors, background box opacity/radius, position margins, padding, line spacing)
-- All lyric blocks with: UUID, Japanese/Korean text, start/end times, confidence score, isManuallyAdjusted flag, isAnchor flag
+- All lyric blocks with: UUID, Japanese/Korean text, start/end times, confidence score, manual adjustment flags (per-boundary), isAnchor, isUserAnchor
+- Style presets stored separately in `~/Library/Application Support/MusicReelsGenerator/style_presets.json`
 
-Backward compatibility: older project files without `trimSettings`, `isAnchor`, `metadataOverlay`, or per-language text color fields are handled via custom `Decodable` initializers that supply default values. Legacy single `textColorHex` is migrated to both `japaneseTextColorHex` and `koreanTextColorHex`.
+Backward compatibility: older project files without `trimSettings`, `isAnchor`, `isUserAnchor`, `metadataOverlay`, per-language text color fields, or granular `manuallyAdjustedStart`/`manuallyAdjustedEnd` are handled via custom `Decodable` initializers that supply default values. Legacy single `textColorHex` is migrated to both `japaneseTextColorHex` and `koreanTextColorHex`. Legacy single `isManuallyAdjusted` is migrated to both per-boundary flags.
 
 ## Limitations
 
