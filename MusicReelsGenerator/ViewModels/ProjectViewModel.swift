@@ -133,12 +133,14 @@ class ProjectViewModel: ObservableObject {
         if isPlaying {
             player.pause()
         } else {
-            // Jump to trim start if before it
+            // Jump to start if at the end, or respect trim bounds
             let trimStart = project.trimSettings.startTime
             let trimEnd = project.trimSettings.endTime
-            if currentTime < trimStart {
+            if trimEnd > 0 && currentTime >= trimEnd {
                 seek(to: trimStart)
-            } else if trimEnd > 0 && currentTime >= trimEnd {
+            } else if currentTime >= duration - 0.1 {
+                seek(to: trimStart)
+            } else if currentTime < trimStart {
                 seek(to: trimStart)
             }
             player.play()
