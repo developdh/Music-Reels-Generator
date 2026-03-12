@@ -68,6 +68,7 @@ class ProjectViewModel: ObservableObject {
     func checkToolAvailability() {
         ffmpegAvailable = ProcessRunner.findFFmpeg() != nil
         whisperAvailable = ProcessRunner.findWhisper() != nil
+        checkAdvancedPipelineAvailability()
     }
 
     // MARK: - Video Import
@@ -287,6 +288,14 @@ class ProjectViewModel: ObservableObject {
         project.trimSettings.isActive(sourceDuration: duration)
     }
 
+    // MARK: - Tool Availability (Advanced Pipeline)
+
+    @Published var advancedPipelineAvailable: Bool = false
+
+    func checkAdvancedPipelineAvailability() {
+        advancedPipelineAvailable = AdvancedAlignmentService.isAvailable
+    }
+
     // MARK: - Auto Alignment
 
     func runAutoAlignment() async {
@@ -302,7 +311,10 @@ class ProjectViewModel: ObservableObject {
             showError("FFmpeg not found. Install with: brew install ffmpeg")
             return
         }
-        guard whisperAvailable else {
+
+        // For Fast mode, require whisper-cpp. For advanced modes, require Python pipeline.
+        let useAdvanced = alignmentQualityMode.usesAdvancedPipeline && advancedPipelineAvailable
+        if !useAdvanced && !whisperAvailable {
             showError("whisper.cpp not found. Install with: brew install whisper-cpp")
             return
         }
@@ -311,7 +323,7 @@ class ProjectViewModel: ObservableObject {
         alignmentProgress = "Starting alignment..."
 
         do {
-            // Step 1: Extract audio
+            // Step 1: Extract audio (needed by both pipelines)
             let tempDir = NSTemporaryDirectory()
             let audioURL = URL(fileURLWithPath: tempDir + "audio_\(project.id.uuidString).wav")
 
@@ -324,23 +336,46 @@ class ProjectViewModel: ObservableObject {
                 }
             }
 
-            // Step 2: Run whisper transcription
-            let segments = try await WhisperAlignmentService.transcribe(
-                audioURL: audioURL
-            ) { [weak self] msg in
-                Task { @MainActor in
-                    self?.alignmentProgress = msg
-                }
-            }
+            let aligned: [LyricBlock]
 
-            // Step 3: Align segments to lyric blocks
-            let aligned = WhisperAlignmentService.align(
-                segments: segments,
-                to: project.lyricBlocks,
-                mode: alignmentQualityMode
-            ) { [weak self] msg in
-                Task { @MainActor in
-                    self?.alignmentProgress = msg
+            if useAdvanced {
+                // Advanced pipeline: Python-based forced alignment
+                alignmentProgress = "Running advanced alignment pipeline..."
+                aligned = try await AdvancedAlignmentService.align(
+                    audioURL: audioURL,
+                    lyrics: project.lyricBlocks,
+                    mode: alignmentQualityMode
+                ) { [weak self] msg in
+                    Task { @MainActor in
+                        self?.alignmentProgress = msg
+                    }
+                }
+            } else {
+                // Legacy pipeline: whisper-cpp segment matching
+                if !whisperAvailable {
+                    showError("whisper.cpp not found and advanced pipeline not available. "
+                              + "Install whisper-cpp with: brew install whisper-cpp, "
+                              + "or set up the advanced pipeline: cd Scripts && ./setup_alignment.sh")
+                    isAligning = false
+                    alignmentProgress = ""
+                    return
+                }
+                let segments = try await WhisperAlignmentService.transcribe(
+                    audioURL: audioURL
+                ) { [weak self] msg in
+                    Task { @MainActor in
+                        self?.alignmentProgress = msg
+                    }
+                }
+
+                aligned = WhisperAlignmentService.align(
+                    segments: segments,
+                    to: project.lyricBlocks,
+                    mode: alignmentQualityMode
+                ) { [weak self] msg in
+                    Task { @MainActor in
+                        self?.alignmentProgress = msg
+                    }
                 }
             }
 

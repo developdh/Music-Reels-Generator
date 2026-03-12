@@ -87,4 +87,14 @@ enum ProcessRunner {
         ]
         return paths.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0) }
     }
+
+    static func findPython() -> String? {
+        let paths = [
+            ProcessRunner.which("python3"),
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3"
+        ]
+        return paths.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0) }
+    }
 }

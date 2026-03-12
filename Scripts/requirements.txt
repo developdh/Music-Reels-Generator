@@ -1,0 +1,9 @@
+# Required for advanced alignment pipeline
+openai-whisper>=20231117
+numpy>=1.24.0
+
+# Japanese kanji-to-kana conversion (strongly recommended)
+pykakasi>=2.2.0
+
+# Optional: vocal separation for Accurate/Maximum modes
+# demucs>=4.0.0

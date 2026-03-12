@@ -18,11 +18,16 @@ struct ToolbarView: View {
             // Alignment quality mode
             Picker("", selection: $vm.alignmentQualityMode) {
                 ForEach(AlignmentQualityMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+                    HStack {
+                        Text(mode.rawValue)
+                        if mode.usesAdvancedPipeline && !vm.advancedPipelineAvailable {
+                            Text("*").foregroundColor(.orange)
+                        }
+                    }.tag(mode)
                 }
             }
-            .frame(width: 90)
-            .help("Alignment quality: higher = more accurate but slower")
+            .frame(width: 100)
+            .help(alignmentPickerHelp)
 
             // Alignment
             Button {
@@ -37,7 +42,8 @@ struct ToolbarView: View {
                     Label("Auto-Align", systemImage: "waveform.badge.magnifyingglass")
                 }
             }
-            .disabled(!vm.project.hasVideo || !vm.project.hasLyrics || vm.isAligning)
+            .disabled(!vm.project.hasVideo || !vm.project.hasLyrics || vm.isAligning
+                      || (!vm.whisperAvailable && !vm.advancedPipelineAvailable))
 
             if vm.isAligning {
                 Text(vm.alignmentProgress)
@@ -51,6 +57,7 @@ struct ToolbarView: View {
             HStack(spacing: 8) {
                 ToolStatusBadge(name: "FFmpeg", available: vm.ffmpegAvailable)
                 ToolStatusBadge(name: "Whisper", available: vm.whisperAvailable)
+                ToolStatusBadge(name: "Advanced", available: vm.advancedPipelineAvailable)
             }
 
             Divider().frame(height: 20)
@@ -112,6 +119,13 @@ struct ToolbarView: View {
         if panel.runModal() == .OK, let url = panel.url {
             vm.saveProjectAs(to: url)
         }
+    }
+
+    private var alignmentPickerHelp: String {
+        if vm.alignmentQualityMode.usesAdvancedPipeline && !vm.advancedPipelineAvailable {
+            return "Advanced pipeline not available. Run: cd Scripts && ./setup_alignment.sh"
+        }
+        return vm.alignmentQualityMode.description
     }
 
     private func exportVideo() {

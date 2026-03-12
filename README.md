@@ -25,8 +25,10 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 - **macOS 14.0+** (Sonoma or later)
 - **Xcode 15+** or Swift 5.9+ toolchain
 - **FFmpeg** — audio extraction, video crop/scale/trim/encode
-- **whisper-cpp** — offline Japanese speech recognition (binary: `whisper-cli`)
-- **Whisper model file** — e.g., `ggml-medium.bin` (~1.5 GB)
+- **whisper-cpp** — offline Japanese speech recognition (binary: `whisper-cli`) — for Fast mode
+- **Python 3 + openai-whisper** — for Balanced/Accurate/Maximum modes (word-level forced alignment)
+- **pykakasi** — Japanese kanji-to-kana conversion for alignment
+- **demucs** (optional) — vocal separation for Accurate/Maximum modes
 
 ## Quick Setup
 
@@ -35,6 +37,16 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 ```
 
 This will install FFmpeg and whisper-cpp via Homebrew and download the whisper medium model.
+
+### Advanced Alignment Setup (Recommended)
+
+For significantly better alignment accuracy, install the Python-based forced alignment pipeline:
+
+```bash
+cd Scripts && ./setup_alignment.sh
+```
+
+This installs `openai-whisper`, `pykakasi`, and optionally `demucs` for vocal separation.
 
 ### Manual Setup
 
@@ -110,12 +122,26 @@ Rules:
 
 ### 3. Auto-Align
 
-Click "Auto-Align" in the toolbar. This will:
+Select a quality mode from the toolbar dropdown, then click "Auto-Align".
+
+**Quality Modes:**
+- **Fast** — Legacy whisper-cpp segment matching (requires whisper-cpp only)
+- **Balanced** — Word-level forced alignment with character-level DTW + global DP (requires Python pipeline)
+- **Accurate** — + Vocal separation (demucs) + collapse detection + recovery passes
+- **Maximum** — + Extended search windows + deeper beam search + full recovery
+
+**Advanced pipeline (Balanced+) performs:**
 1. Extract audio from the video as 16kHz mono WAV (FFmpeg)
-2. Transcribe Japanese speech (whisper-cpp with `--output-csv`)
-3. Build candidate matches for each lyric block (1–3 consecutive whisper segments, fuzzy similarity ≥ 0.25)
-4. Run monotonic beam-search DP (beam width 50) to find the globally optimal segment-to-block assignment
-5. Mark high-confidence matches as anchors, interpolate unmatched blocks proportionally by text length
+2. Optional vocal separation to isolate singing from accompaniment (demucs)
+3. Transcribe with word-level timestamps (openai-whisper Python with cross-attention)
+4. Convert Japanese lyrics to hiragana via G2P (pykakasi)
+5. Expand whisper words to character-level timing
+6. VAD-based chunking at low-energy boundaries (8–25 second chunks)
+7. Per-chunk character-level DTW alignment against multiple candidate lyric windows
+8. Global monotonic DP to select best path across all chunks
+9. Collapse detection and re-anchoring of degraded regions
+10. Line timing reconstruction from character-level alignment
+11. Proportional interpolation for remaining unmatched lines
 
 ### 4. Fix Timing
 
@@ -217,7 +243,8 @@ MusicReelsGenerator/
 │   └── MetadataOverlaySettings    # Title/artist text, fonts, colors, background box, position
 ├── Services/
 │   ├── AudioExtractionService     # FFmpeg → 16kHz mono WAV for whisper
-│   ├── WhisperAlignmentService    # Transcription + monotonic DP beam-search alignment
+│   ├── WhisperAlignmentService    # Legacy: whisper-cpp segment matching (Fast mode)
+│   ├── AdvancedAlignmentService   # Advanced: Python subprocess forced alignment (Balanced+)
 │   ├── LyricsParserService        # Block-format bilingual parser
 │   ├── ExportService              # Two-stage pipeline (FFmpeg trim+crop → AVFoundation burn-in)
 │   ├── SubtitleRenderService      # ASS subtitle file generation
@@ -241,22 +268,46 @@ MusicReelsGenerator/
 │   ├── TimeFormatter              # Time display (MM:SS.CS, ASS timestamp format)
 │   ├── FontUtility                # System font enumeration, JP/KR font recommendations
 │   └── ColorExtension             # Hex ↔ Color conversion
-└── Resources/                     # Info.plist, entitlements
+├── Resources/                     # Info.plist, entitlements
+Scripts/
+├── alignment_pipeline.py          # Python forced alignment: DTW, chunking, DP, recovery
+├── requirements.txt               # Python dependencies
+└── setup_alignment.sh             # One-command setup for advanced pipeline
 ```
 
 ## How Alignment Works
 
-The alignment algorithm matches whisper-cpp speech segments to user-provided lyric blocks:
+### Legacy (Fast Mode)
 
-1. **Candidate Generation** — For each lyric block, try matching against every whisper segment (and combinations of 2–3 consecutive segments). Score using normalized Levenshtein distance and LCS-based containment. Keep candidates with score ≥ 0.25.
+The Fast mode uses whisper-cpp for segment-level alignment:
+1. Whisper-cpp transcribes audio into sentence-level segments with timestamps
+2. Each lyric block is matched against whisper segments using text similarity (Levenshtein + LCS)
+3. Monotonic beam-search DP finds the best assignment under monotonic constraint
+4. High-confidence matches become anchors; unmatched blocks are interpolated
 
-2. **Text Normalization** — Before comparison, both texts are normalized: katakana → hiragana, remove punctuation/music symbols, normalize full-width characters, strip prolonged sound marks, lowercase.
+### Advanced (Balanced / Accurate / Maximum)
 
-3. **Monotonic DP** — Forward beam search (width 50) finds the best assignment of segments to blocks under the constraint that segment indices must be strictly increasing. Each block can be matched or skipped. This prevents one bad match from corrupting all later blocks.
+The advanced pipeline uses character-level forced alignment for dramatically better accuracy:
 
-4. **Anchor Marking** — Blocks matched with confidence ≥ 0.6, or manually adjusted by the user, are marked as anchors.
+1. **Word-Level Transcription** — openai-whisper (Python) transcribes with `word_timestamps=True`, producing per-word timing via cross-attention weights (~10-25x more data points than segment-level)
 
-5. **Proportional Interpolation** — Unmatched blocks between anchors receive interpolated timing proportional to their Japanese text length (longer lines get more time). These blocks get confidence ~0.05.
+2. **Optional Vocal Separation** — In Accurate/Maximum modes, demucs separates vocals from accompaniment before transcription, significantly improving recognition quality for music
+
+3. **Japanese G2P** — Lyrics are converted to hiragana using pykakasi (kanji→kana), then normalized (remove punctuation, katakana→hiragana). This creates alignment-friendly character units
+
+4. **Character-Level Expansion** — Whisper words are expanded into character-level timing (proportional distribution within each word). This gives ~500-1500 character timestamps per song
+
+5. **Banded DTW Alignment** — The whisper character stream is aligned to the concatenated lyric character stream using banded Dynamic Time Warping with asymmetric costs (missing lyric chars penalized more than extra whisper chars)
+
+6. **VAD-Based Chunking** — Audio is chunked at low-energy boundaries (8-25 second chunks) using RMS energy analysis, independent of lyric timestamps. This prevents alignment drift from affecting chunk boundaries
+
+7. **Multi-Window Candidate Scoring** — Each chunk is aligned against multiple candidate lyric windows around the expected position. Character-level DTW scores each candidate
+
+8. **Global Monotonic DP** — Beam search DP across all chunks selects the globally optimal monotonic assignment of lyric windows to audio chunks, with continuity bonuses and gap penalties
+
+9. **Collapse Detection** — After alignment, the system scans for collapse signals: sudden confidence drops, impossible durations, backwards time jumps, large gaps. Collapsed regions are re-aligned with wider search windows
+
+10. **Line Reconstruction** — Final line start/end times are derived from the first/last matched character of each line in the DTW alignment, not from direct ASR timestamps
 
 ## How Export Works
 

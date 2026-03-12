@@ -68,13 +68,38 @@ enum AlignmentQualityMode: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// Whether this mode should use the advanced Python-based pipeline
+    var usesAdvancedPipeline: Bool {
+        switch self {
+        case .fast: return false
+        case .balanced: return true
+        case .accurate: return true
+        case .maximum: return true
+        }
+    }
+
+    /// Mode name passed to the Python pipeline
+    var pipelineModeName: String {
+        switch self {
+        case .fast: return "fast"
+        case .balanced: return "balanced"
+        case .accurate: return "accurate"
+        case .maximum: return "maximum"
+        }
+    }
+
+    /// Whisper model override for the Python pipeline (nil = use pipeline default)
+    var whisperModelOverride: String? {
+        return nil // Let the pipeline choose based on mode
+    }
+
     /// Description for UI
     var description: String {
         switch self {
-        case .fast: return "Quick alignment, lower accuracy"
-        case .balanced: return "Good balance of speed and accuracy"
-        case .accurate: return "Higher accuracy, slower processing"
-        case .maximum: return "Best accuracy, significantly slower"
+        case .fast: return "Legacy whisper-cpp, quick line matching"
+        case .balanced: return "Word-level forced alignment + global DP"
+        case .accurate: return "Vocal separation + character-level alignment"
+        case .maximum: return "Full pipeline + collapse recovery + extended search"
         }
     }
 }
