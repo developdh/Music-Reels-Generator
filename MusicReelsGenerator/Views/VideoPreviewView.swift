@@ -58,6 +58,7 @@ struct VideoPreviewView: View {
                     videoMetadata: vm.project.videoMetadata,
                     cropSettings: vm.project.cropSettings,
                     subtitleStyle: vm.project.subtitleStyle,
+                    metadataOverlay: vm.project.metadataOverlay,
                     currentBlock: vm.currentBlock
                 )
             } else {
@@ -84,6 +85,7 @@ struct CroppedVideoPreview: View {
     let videoMetadata: VideoMetadata
     let cropSettings: CropSettings
     let subtitleStyle: SubtitleStyle
+    let metadataOverlay: MetadataOverlaySettings
     let currentBlock: LyricBlock?
 
     var body: some View {
@@ -102,16 +104,25 @@ struct CroppedVideoPreview: View {
                         .frame(width: previewSize.width, height: previewSize.height)
                         .clipped()
 
+                    let canvasSize = CGSize(
+                        width: CGFloat(cropSettings.outputWidth),
+                        height: CGFloat(cropSettings.outputHeight)
+                    )
+
+                    // Metadata overlay (top-left title/artist)
+                    MetadataOverlayPreview(
+                        settings: metadataOverlay,
+                        previewSize: previewSize,
+                        canvasSize: canvasSize
+                    )
+
                     // Subtitle overlay — rendered at export canvas size, scaled to preview
                     if let block = currentBlock {
                         SubtitleOverlayView(
                             block: block,
                             style: subtitleStyle,
                             previewSize: previewSize,
-                            canvasSize: CGSize(
-                                width: CGFloat(cropSettings.outputWidth),
-                                height: CGFloat(cropSettings.outputHeight)
-                            )
+                            canvasSize: canvasSize
                         )
                     }
                 }
@@ -158,6 +169,23 @@ struct CroppedVideoPreview: View {
             return byWidth
         }
         return byHeight
+    }
+}
+
+/// Preview metadata overlay (top-left title/artist) using the same renderer as export.
+struct MetadataOverlayPreview: View {
+    let settings: MetadataOverlaySettings
+    let previewSize: CGSize
+    let canvasSize: CGSize
+
+    var body: some View {
+        if let cgImage = SubtitleRenderer.renderMetadataOverlay(settings, canvasSize: canvasSize) {
+            Image(nsImage: NSImage(cgImage: cgImage, size: canvasSize))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: previewSize.width, height: previewSize.height)
+                .allowsHitTesting(false)
+        }
     }
 }
 

@@ -124,6 +124,7 @@ class ExportService {
             outputURL: outputURL,
             blocks: exportBlocks,
             style: project.subtitleStyle,
+            metadataOverlay: project.metadataOverlay,
             outputSize: CGSize(width: outW, height: outH),
             onProgress: { p in
                 onProgress(.exporting(progress: 0.4 + p * 0.6))
@@ -141,6 +142,7 @@ class ExportService {
         outputURL: URL,
         blocks: [LyricBlock],
         style: SubtitleStyle,
+        metadataOverlay: MetadataOverlaySettings,
         outputSize: CGSize,
         onProgress: @escaping (Double) -> Void
     ) async throws {
@@ -225,6 +227,11 @@ class ExportService {
             blocks: blocks, style: style, canvasSize: outputSize
         )
 
+        // --- Pre-render metadata overlay (static, same for every frame) ---
+        let metadataImage = SubtitleRenderer.renderMetadataOverlay(
+            metadataOverlay, canvasSize: outputSize
+        )
+
         // --- Process ---
         reader.startReading()
         writer.startWriting()
@@ -274,15 +281,18 @@ class ExportService {
 
             guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { continue }
 
-            if let activeBlock, let subtitleImage = subtitleImages[activeBlock.id] {
-                // Draw subtitle onto frame
-                let newBuffer = drawSubtitle(
-                    subtitleImage, onto: imageBuffer, width: width, height: height,
-                    pool: pixelBufferAdaptor.pixelBufferPool
+            let subtitleImage = activeBlock.flatMap { subtitleImages[$0.id] }
+            let needsOverlay = subtitleImage != nil || metadataImage != nil
+
+            if needsOverlay {
+                let newBuffer = drawOverlays(
+                    onto: imageBuffer, width: width, height: height,
+                    pool: pixelBufferAdaptor.pixelBufferPool,
+                    metadataImage: metadataImage,
+                    subtitleImage: subtitleImage
                 )
                 pixelBufferAdaptor.append(newBuffer ?? imageBuffer, withPresentationTime: presentationTime)
             } else {
-                // Pass frame through unchanged
                 pixelBufferAdaptor.append(imageBuffer, withPresentationTime: presentationTime)
             }
 
@@ -306,13 +316,14 @@ class ExportService {
         }
     }
 
-    // MARK: - Composite subtitle image onto video frame
+    // MARK: - Composite overlays onto video frame
 
-    private func drawSubtitle(
-        _ subtitleImage: CGImage,
+    private func drawOverlays(
         onto pixelBuffer: CVPixelBuffer,
         width: Int, height: Int,
-        pool: CVPixelBufferPool?
+        pool: CVPixelBufferPool?,
+        metadataImage: CGImage?,
+        subtitleImage: CGImage?
     ) -> CVPixelBuffer? {
         var newBuffer: CVPixelBuffer?
 
@@ -350,8 +361,17 @@ class ExportService {
             ctx.draw(frameImage, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
 
-        // Draw subtitle overlay
-        ctx.draw(subtitleImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let frameRect = CGRect(x: 0, y: 0, width: width, height: height)
+
+        // Draw metadata overlay (top-left title/artist)
+        if let metadataImage {
+            ctx.draw(metadataImage, in: frameRect)
+        }
+
+        // Draw subtitle overlay (bottom lyrics)
+        if let subtitleImage {
+            ctx.draw(subtitleImage, in: frameRect)
+        }
 
         CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
         CVPixelBufferUnlockBaseAddress(outputBuffer, [])

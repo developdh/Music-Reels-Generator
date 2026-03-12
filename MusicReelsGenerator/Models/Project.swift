@@ -8,6 +8,7 @@ struct Project: Codable, Identifiable {
     var cropSettings: CropSettings
     var trimSettings: TrimSettings
     var subtitleStyle: SubtitleStyle
+    var metadataOverlay: MetadataOverlaySettings
     var lyricBlocks: [LyricBlock]
     var createdAt: Date
     var updatedAt: Date
@@ -23,6 +24,7 @@ struct Project: Codable, Identifiable {
         self.cropSettings = CropSettings()
         self.trimSettings = TrimSettings()
         self.subtitleStyle = SubtitleStyle()
+        self.metadataOverlay = MetadataOverlaySettings()
         self.lyricBlocks = []
         self.createdAt = Date()
         self.updatedAt = Date()
@@ -60,6 +62,8 @@ struct Project: Codable, Identifiable {
         trimSettings = try container.decodeIfPresent(TrimSettings.self, forKey: .trimSettings)
             ?? TrimSettings.fullDuration(videoMetadata.duration)
         subtitleStyle = try container.decode(SubtitleStyle.self, forKey: .subtitleStyle)
+        metadataOverlay = try container.decodeIfPresent(MetadataOverlaySettings.self, forKey: .metadataOverlay)
+            ?? MetadataOverlaySettings()
         lyricBlocks = try container.decode([LyricBlock].self, forKey: .lyricBlocks)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)

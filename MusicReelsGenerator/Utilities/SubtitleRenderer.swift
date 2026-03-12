@@ -146,6 +146,119 @@ enum SubtitleRenderer {
         return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
+    // MARK: - Metadata Overlay (top-left title/artist)
+
+    /// Render the metadata overlay as a CGImage at the canonical export canvas size.
+    /// Shows title and artist with a dark rounded background box.
+    static func renderMetadataOverlay(
+        _ settings: MetadataOverlaySettings,
+        canvasSize: CGSize
+    ) -> CGImage? {
+        guard settings.shouldRender else { return nil }
+
+        let width = Int(canvasSize.width)
+        let height = Int(canvasSize.height)
+
+        let titleText = settings.titleText.trimmingCharacters(in: .whitespaces)
+        let artistText = settings.artistText.trimmingCharacters(in: .whitespaces)
+        let hasTitle = !titleText.isEmpty
+        let hasArtist = !artistText.isEmpty
+
+        // Fonts
+        let titleFont = resolveFont(family: settings.titleFontFamily, size: settings.titleFontSize)
+        let artistFont = resolveFont(family: settings.artistFontFamily, size: settings.artistFontSize)
+
+        // Colors
+        let titleColor = NSColor(Color(hex: settings.titleTextColorHex))
+        let artistColor = NSColor(Color(hex: settings.artistTextColorHex))
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .left
+        paragraphStyle.lineBreakMode = .byTruncatingTail
+
+        let titleAttrs: [NSAttributedString.Key: Any] = [
+            .font: titleFont,
+            .foregroundColor: titleColor,
+            .paragraphStyle: paragraphStyle
+        ]
+        let artistAttrs: [NSAttributedString.Key: Any] = [
+            .font: artistFont,
+            .foregroundColor: artistColor,
+            .paragraphStyle: paragraphStyle
+        ]
+
+        // Max text width — leave some space from right edge
+        let maxTextWidth = canvasSize.width - settings.leftMargin - settings.horizontalPadding * 2 - 40
+
+        // Measure text
+        var titleSize = CGSize.zero
+        var artistSize = CGSize.zero
+
+        if hasTitle {
+            let titleStr = NSAttributedString(string: titleText, attributes: titleAttrs)
+            titleSize = titleStr.boundingRect(
+                with: NSSize(width: maxTextWidth, height: 300),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            ).size
+        }
+        if hasArtist {
+            let artistStr = NSAttributedString(string: artistText, attributes: artistAttrs)
+            artistSize = artistStr.boundingRect(
+                with: NSSize(width: maxTextWidth, height: 300),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            ).size
+        }
+
+        // Calculate box dimensions
+        let contentWidth = max(titleSize.width, artistSize.width)
+        let spacing = (hasTitle && hasArtist) ? settings.lineSpacing : 0
+        let contentHeight = titleSize.height + spacing + artistSize.height
+
+        let boxWidth = contentWidth + settings.horizontalPadding * 2
+        let boxHeight = contentHeight + settings.verticalPadding * 2
+
+        // NSImage origin is bottom-left; top-left in screen = bottom-left transform
+        // Y position: canvas height - topMargin - boxHeight
+        let boxX = settings.leftMargin
+        let boxY = CGFloat(height) - settings.topMargin - boxHeight
+
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+
+        guard let ctx = NSGraphicsContext.current?.cgContext else {
+            image.unlockFocus()
+            return nil
+        }
+
+        // --- Draw background box ---
+        let bgColor = NSColor(Color(hex: settings.backgroundColorHex))
+            .withAlphaComponent(settings.backgroundOpacity)
+        let boxRect = NSRect(x: boxX, y: boxY, width: boxWidth, height: boxHeight)
+        let boxPath = NSBezierPath(roundedRect: boxRect, xRadius: settings.cornerRadius, yRadius: settings.cornerRadius)
+        bgColor.setFill()
+        boxPath.fill()
+
+        // --- Draw text ---
+        // Title at top of box, artist below
+        // In NSImage coords: title goes higher (larger Y), artist below
+        let textX = boxX + settings.horizontalPadding
+
+        if hasArtist {
+            let artistY = boxY + settings.verticalPadding
+            let artistRect = NSRect(x: textX, y: artistY, width: maxTextWidth, height: artistSize.height + 4)
+            NSAttributedString(string: artistText, attributes: artistAttrs).draw(in: artistRect)
+        }
+
+        if hasTitle {
+            let titleY = boxY + settings.verticalPadding + (hasArtist ? artistSize.height + spacing : 0)
+            let titleRect = NSRect(x: textX, y: titleY, width: maxTextWidth, height: titleSize.height + 4)
+            NSAttributedString(string: titleText, attributes: titleAttrs).draw(in: titleRect)
+        }
+
+        image.unlockFocus()
+        return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    }
+
     /// Render all timed blocks into a lookup table of CGImages.
     static func prerenderAll(
         blocks: [LyricBlock],
