@@ -267,6 +267,11 @@ struct StyleInspectorView: View {
                             .monospacedDigit()
                             .frame(width: 32)
                     }
+
+                    SubtitleColorPicker(
+                        label: "Color:",
+                        hexColor: $vm.project.subtitleStyle.japaneseTextColorHex
+                    )
                 }
             }
 
@@ -286,6 +291,11 @@ struct StyleInspectorView: View {
                             .monospacedDigit()
                             .frame(width: 32)
                     }
+
+                    SubtitleColorPicker(
+                        label: "Color:",
+                        hexColor: $vm.project.subtitleStyle.koreanTextColorHex
+                    )
                 }
             }
 
@@ -309,7 +319,7 @@ struct StyleInspectorView: View {
                     HStack {
                         Text("Bottom:")
                             .frame(width: 52, alignment: .trailing)
-                        Slider(value: $vm.project.subtitleStyle.bottomMargin, in: 50...500, step: 5)
+                        Slider(value: $vm.project.subtitleStyle.bottomMargin, in: 50...960, step: 5)
                         Text("\(Int(vm.project.subtitleStyle.bottomMargin))")
                             .monospacedDigit()
                             .frame(width: 32)
@@ -610,6 +620,54 @@ struct TrimBarView: View {
                     .offset(x: w * playFrac)
             }
             .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+    }
+}
+
+// MARK: - Subtitle Color Picker
+
+struct SubtitleColorPicker: View {
+    let label: String
+    @Binding var hexColor: String
+
+    private static let presets: [(String, String)] = [
+        ("White", "#FFFFFF"),
+        ("Cyan", "#E0FFFF"),
+        ("Yellow", "#FFFACD"),
+        ("Mint", "#BDFCC9"),
+        ("Pink", "#FFB6C1"),
+    ]
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .frame(width: 36, alignment: .trailing)
+
+            ColorPicker(
+                "",
+                selection: Binding(
+                    get: { Color(hex: hexColor) },
+                    set: { hexColor = $0.toHex() }
+                ),
+                supportsOpacity: false
+            )
+            .labelsHidden()
+            .frame(width: 28)
+
+            ForEach(Self.presets, id: \.1) { name, hex in
+                Button {
+                    hexColor = hex
+                } label: {
+                    Circle()
+                        .fill(Color(hex: hex))
+                        .overlay(
+                            Circle().stroke(hex == hexColor ? Color.accentColor : Color.gray.opacity(0.4), lineWidth: hex == hexColor ? 2 : 1)
+                        )
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+                .help(name)
+            }
         }
     }
 }

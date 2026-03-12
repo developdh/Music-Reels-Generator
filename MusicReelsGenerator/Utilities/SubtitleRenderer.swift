@@ -38,7 +38,8 @@ enum SubtitleRenderer {
 
         let koFont = resolveFont(family: style.koreanFontFamily, size: style.koreanFontSize)
 
-        let textColor = NSColor(Color(hex: style.textColorHex))
+        let jaTextColor = NSColor(Color(hex: style.japaneseTextColorHex))
+        let koTextColor = NSColor(Color(hex: style.koreanTextColorHex))
         let outlineColor = NSColor(Color(hex: style.outlineColorHex))
 
         let paragraphStyle = NSMutableParagraphStyle()
@@ -58,12 +59,12 @@ enum SubtitleRenderer {
         // Measure text
         let jaFillAttrs: [NSAttributedString.Key: Any] = [
             .font: jaFont,
-            .foregroundColor: textColor,
+            .foregroundColor: jaTextColor,
             .paragraphStyle: paragraphStyle
         ]
         let koFillAttrs: [NSAttributedString.Key: Any] = [
             .font: koFont,
-            .foregroundColor: textColor,
+            .foregroundColor: koTextColor,
             .paragraphStyle: paragraphStyle
         ]
 

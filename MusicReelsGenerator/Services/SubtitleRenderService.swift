@@ -10,7 +10,8 @@ enum SubtitleRenderService {
         let jaMarginV = Int(style.bottomMargin + style.koreanFontSize + style.lineSpacing)
         let koMarginV = Int(style.bottomMargin)
         let shadow = style.shadowEnabled ? 2 : 0
-        let primaryColor = assColor(style.textColorHex)
+        let jaPrimaryColor = assColor(style.japaneseTextColorHex)
+        let koPrimaryColor = assColor(style.koreanTextColorHex)
         let outlineColor = assColor(style.outlineColorHex)
         let outline = Int(style.outlineWidth)
 
@@ -25,10 +26,10 @@ enum SubtitleRenderService {
         ass += "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
 
         // Japanese style — bold
-        ass += "Style: Japanese,\(style.japaneseFontFamily),\(Int(style.japaneseFontSize)),\(primaryColor),&H00000000,\(outlineColor),&H80000000,1,0,0,0,100,100,0,0,1,\(outline),\(shadow),2,20,20,\(jaMarginV),1\n"
+        ass += "Style: Japanese,\(style.japaneseFontFamily),\(Int(style.japaneseFontSize)),\(jaPrimaryColor),&H00000000,\(outlineColor),&H80000000,1,0,0,0,100,100,0,0,1,\(outline),\(shadow),2,20,20,\(jaMarginV),1\n"
 
         // Korean style — regular weight
-        ass += "Style: Korean,\(style.koreanFontFamily),\(Int(style.koreanFontSize)),\(primaryColor),&H00000000,\(outlineColor),&H80000000,0,0,0,0,100,100,0,0,1,\(outline),\(shadow),2,20,20,\(koMarginV),1\n"
+        ass += "Style: Korean,\(style.koreanFontFamily),\(Int(style.koreanFontSize)),\(koPrimaryColor),&H00000000,\(outlineColor),&H80000000,0,0,0,0,100,100,0,0,1,\(outline),\(shadow),2,20,20,\(koMarginV),1\n"
 
         ass += "\n[Events]\n"
         ass += "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
