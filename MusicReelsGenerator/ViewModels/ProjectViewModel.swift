@@ -688,6 +688,12 @@ class ProjectViewModel: ObservableObject {
             statusMessage = "Alignment complete: \(matched)/\(aligned.count) blocks matched (\(String(format: "%.1f", totalElapsed))s)"
             print("[Alignment] Pipeline complete in \(String(format: "%.1f", totalElapsed))s — \(matched)/\(aligned.count) blocks matched")
 
+            // Auto-correct between anchors if at least 2 anchors exist
+            if anchorCount >= 2 {
+                correctBetweenAllAnchors()
+                print("[Alignment] Auto-corrected between \(anchorCount) anchors after alignment")
+            }
+
             // Cleanup
             try? FileManager.default.removeItem(at: audioURL)
 
