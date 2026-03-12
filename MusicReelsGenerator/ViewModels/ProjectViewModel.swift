@@ -186,11 +186,16 @@ class ProjectViewModel: ObservableObject {
 
         if let st = startTime {
             project.lyricBlocks[idx].startTime = st
+            project.lyricBlocks[idx].manuallyAdjustedStart = true
         }
         if let et = endTime {
             project.lyricBlocks[idx].endTime = et
+            project.lyricBlocks[idx].manuallyAdjustedEnd = true
         }
-        project.lyricBlocks[idx].isManuallyAdjusted = true
+        // Auto-anchor when both start and end are manually set
+        if project.lyricBlocks[idx].manuallyAdjustedStart && project.lyricBlocks[idx].manuallyAdjustedEnd {
+            project.lyricBlocks[idx].isAnchor = true
+        }
         project.lyricBlocks[idx].confidence = 1.0
         project.touch()
         isDirty = true
@@ -233,7 +238,7 @@ class ProjectViewModel: ObservableObject {
         }
         let delta = currentTime - oldStart
         shiftFollowingBlocks(fromBlockID: id, delta: delta)
-        project.lyricBlocks[idx].isManuallyAdjusted = true
+        project.lyricBlocks[idx].manuallyAdjustedStart = true
         project.lyricBlocks[idx].isAnchor = true
         project.lyricBlocks[idx].confidence = 1.0
     }
@@ -297,6 +302,259 @@ class ProjectViewModel: ObservableObject {
     // MARK: - Tool Availability (Advanced Pipeline)
 
     @Published var advancedPipelineAvailable: Bool = false
+
+    // MARK: - Cached Alignment Data (transient, not persisted)
+
+    /// Whisper segments cached after last alignment for fast local re-alignment
+    private var cachedWhisperSegments: [WhisperSegment] = []
+
+    // MARK: - Anchor Computed Properties
+
+    /// Number of anchor blocks in the project
+    var anchorCount: Int {
+        project.lyricBlocks.filter { $0.isAnchor || $0.isTrustedAnchor }.count
+    }
+
+    /// Whether the selected block has surrounding anchors for piecewise correction
+    var hasSurroundingAnchors: Bool {
+        guard let idx = selectedBlockIndex else { return false }
+        let hasLeft = project.lyricBlocks[..<idx].contains { $0.isAnchor || $0.isTrustedAnchor }
+        let hasRight = project.lyricBlocks[(idx + 1)...].contains { $0.isAnchor || $0.isTrustedAnchor }
+        return hasLeft || hasRight
+    }
+
+    /// Find the anchor index range surrounding the selected block
+    private func surroundingAnchorIndices(for blockIndex: Int) -> (left: Int?, right: Int?) {
+        var left: Int? = nil
+        for i in stride(from: blockIndex - 1, through: 0, by: -1) {
+            if project.lyricBlocks[i].isAnchor || project.lyricBlocks[i].isTrustedAnchor {
+                left = i
+                break
+            }
+        }
+        var right: Int? = nil
+        for i in (blockIndex + 1)..<project.lyricBlocks.count {
+            if project.lyricBlocks[i].isAnchor || project.lyricBlocks[i].isTrustedAnchor {
+                right = i
+                break
+            }
+        }
+        return (left, right)
+    }
+
+    // MARK: - Anchor Operations
+
+    func setAnchor(id: UUID) {
+        guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+        project.lyricBlocks[idx].isAnchor = true
+        project.touch()
+        isDirty = true
+        statusMessage = "블록 #\(idx + 1) 앵커 고정"
+    }
+
+    func unsetAnchor(id: UUID) {
+        guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+        project.lyricBlocks[idx].isAnchor = false
+        project.touch()
+        isDirty = true
+        statusMessage = "블록 #\(idx + 1) 앵커 해제"
+    }
+
+    // MARK: - Piecewise Correction Between Anchors
+
+    /// Correct timing for all non-anchored blocks between each pair of anchors.
+    /// Distributes time proportionally by Japanese text length.
+    func correctBetweenAllAnchors() {
+        let blocks = project.lyricBlocks
+        guard blocks.count >= 2 else { return }
+
+        // Find all anchor indices (anchored or both-start-end manually set)
+        let anchorIndices = blocks.indices.filter {
+            blocks[$0].isAnchor || blocks[$0].isTrustedAnchor
+        }
+
+        guard anchorIndices.count >= 2 else {
+            showError("앵커가 2개 이상 필요합니다. 타이밍을 수정한 줄을 앵커로 고정하세요.")
+            return
+        }
+
+        var totalCorrected = 0
+        for pairIdx in 0..<(anchorIndices.count - 1) {
+            let corrected = correctSegmentBetween(
+                leftAnchorIdx: anchorIndices[pairIdx],
+                rightAnchorIdx: anchorIndices[pairIdx + 1]
+            )
+            totalCorrected += corrected
+        }
+
+        project.touch()
+        isDirty = true
+        statusMessage = "앵커 \(anchorIndices.count)개 사이 \(totalCorrected)개 블록 재보정 완료"
+        print("[AnchorCorrection] Corrected \(totalCorrected) blocks across \(anchorIndices.count - 1) segments")
+    }
+
+    /// Correct timing only in the segment surrounding the selected block.
+    func correctBetweenSurroundingAnchors() {
+        guard let idx = selectedBlockIndex else { return }
+
+        let (leftOpt, rightOpt) = surroundingAnchorIndices(for: idx)
+
+        guard let left = leftOpt, let right = rightOpt else {
+            showError("선택한 블록 양쪽에 앵커가 필요합니다.")
+            return
+        }
+
+        let corrected = correctSegmentBetween(leftAnchorIdx: left, rightAnchorIdx: right)
+        project.touch()
+        isDirty = true
+        statusMessage = "앵커 #\(left + 1) ~ #\(right + 1) 사이 \(corrected)개 블록 재보정 완료"
+    }
+
+    /// Core piecewise correction: distribute time proportionally between two anchors.
+    /// Returns the number of blocks corrected.
+    @discardableResult
+    private func correctSegmentBetween(leftAnchorIdx: Int, rightAnchorIdx: Int) -> Int {
+        guard leftAnchorIdx < rightAnchorIdx - 1 else { return 0 }
+
+        let leftEnd = project.lyricBlocks[leftAnchorIdx].endTime
+            ?? project.lyricBlocks[leftAnchorIdx].startTime
+            ?? 0
+        let rightStart = project.lyricBlocks[rightAnchorIdx].startTime ?? duration
+
+        let availableTime = rightStart - leftEnd
+        guard availableTime > 0.1 else { return 0 }
+
+        // Collect non-anchor/non-manual middle blocks
+        var middleIndices: [Int] = []
+        for idx in (leftAnchorIdx + 1)..<rightAnchorIdx {
+            if !project.lyricBlocks[idx].isAnchor && !project.lyricBlocks[idx].isTrustedAnchor {
+                middleIndices.append(idx)
+            }
+        }
+
+        guard !middleIndices.isEmpty else { return 0 }
+
+        // Weight by text length (min 1 to avoid zero-division)
+        let weights = middleIndices.map { max(1.0, Double(project.lyricBlocks[$0].japanese.count)) }
+        let totalWeight = weights.reduce(0, +)
+
+        var cursor = leftEnd
+        for (j, idx) in middleIndices.enumerated() {
+            let proportion = weights[j] / totalWeight
+            let blockDuration = availableTime * proportion
+
+            project.lyricBlocks[idx].startTime = cursor
+            project.lyricBlocks[idx].endTime = cursor + blockDuration
+            // Mark as corrected — moderate confidence
+            project.lyricBlocks[idx].confidence = max(project.lyricBlocks[idx].confidence ?? 0, 0.3)
+            cursor += blockDuration
+        }
+
+        print("[AnchorCorrection] Corrected \(middleIndices.count) blocks between anchors #\(leftAnchorIdx + 1) and #\(rightAnchorIdx + 1) (\(String(format: "%.1f", leftEnd))–\(String(format: "%.1f", rightStart))s)")
+        return middleIndices.count
+    }
+
+    // MARK: - Local Re-Alignment (Legacy Engine)
+
+    /// Re-align only the region surrounding the selected block using the legacy engine.
+    /// Uses cached whisper segments if available, otherwise transcribes first.
+    func localRealignSurroundingRegion() async {
+        guard let idx = selectedBlockIndex else { return }
+
+        let (leftOpt, rightOpt) = surroundingAnchorIndices(for: idx)
+        let fromIndex = (leftOpt ?? 0) + (leftOpt != nil ? 1 : 0)
+        let toIndex = (rightOpt ?? project.lyricBlocks.count - 1) - (rightOpt != nil ? 1 : 0)
+
+        guard fromIndex <= toIndex else { return }
+
+        await localRealignRange(fromIndex: fromIndex, toIndex: toIndex)
+    }
+
+    /// Re-align a specific range of blocks using the legacy whisper engine.
+    /// Anchored and manually adjusted blocks within the range are preserved.
+    func localRealignRange(fromIndex: Int, toIndex: Int) async {
+        guard fromIndex >= 0, toIndex < project.lyricBlocks.count, fromIndex <= toIndex else { return }
+        guard project.hasVideo else {
+            showError("비디오를 먼저 가져오세요.")
+            return
+        }
+        guard ffmpegAvailable, whisperAvailable else {
+            showError("FFmpeg과 whisper-cpp가 필요합니다.")
+            return
+        }
+
+        isAligning = true
+        alignmentProgress = "구간 재정렬 준비 중..."
+
+        defer {
+            isAligning = false
+            alignmentProgress = ""
+        }
+
+        do {
+            // Ensure we have whisper segments (cached or freshly transcribed)
+            if cachedWhisperSegments.isEmpty {
+                alignmentProgress = "오디오 추출 중..."
+                let tempDir = NSTemporaryDirectory()
+                let audioURL = URL(fileURLWithPath: tempDir + "audio_\(project.id.uuidString).wav")
+
+                try await AudioExtractionService.extractAudio(
+                    from: project.sourceVideoURL!,
+                    to: audioURL
+                )
+
+                alignmentProgress = "음성 인식 중..."
+                cachedWhisperSegments = try await WhisperAlignmentService.transcribe(
+                    audioURL: audioURL
+                ) { [weak self] msg in
+                    Task { @MainActor in
+                        self?.alignmentProgress = msg
+                    }
+                }
+                print("[LocalRealign] Transcribed \(cachedWhisperSegments.count) segments (cached for future use)")
+            }
+
+            // Determine time bounds from surrounding context
+            let timeBefore: Double
+            if fromIndex > 0, let end = project.lyricBlocks[fromIndex - 1].endTime {
+                timeBefore = end
+            } else if fromIndex > 0, let start = project.lyricBlocks[fromIndex - 1].startTime {
+                timeBefore = start
+            } else {
+                timeBefore = 0
+            }
+
+            let timeAfter: Double
+            if toIndex < project.lyricBlocks.count - 1, let start = project.lyricBlocks[toIndex + 1].startTime {
+                timeAfter = start
+            } else {
+                timeAfter = duration
+            }
+
+            alignmentProgress = "블록 \(fromIndex + 1)–\(toIndex + 1) 재정렬 중..."
+
+            // Run bounded local re-alignment via legacy engine
+            let updated = WhisperAlignmentService.realignRegion(
+                segments: cachedWhisperSegments,
+                allBlocks: project.lyricBlocks,
+                fromIndex: fromIndex,
+                toIndex: toIndex,
+                timeBefore: timeBefore,
+                timeAfter: timeAfter,
+                mode: .legacy
+            )
+
+            // Apply results — the realignRegion method already preserves anchors
+            project.lyricBlocks = updated
+            project.touch()
+            isDirty = true
+
+            statusMessage = "블록 \(fromIndex + 1)–\(toIndex + 1) 구간 재정렬 완료"
+
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
 
     // MARK: - Auto Alignment
 
@@ -396,8 +654,11 @@ class ProjectViewModel: ObservableObject {
                     }
                 }
 
+                // Cache segments for fast local re-alignment later
+                self.cachedWhisperSegments = segments
+
                 elapsed = CFAbsoluteTimeGetCurrent() - stageStart
-                print("[Alignment] Stage 2: Whisper transcription completed in \(String(format: "%.1f", elapsed))s (\(segments.count) segments)")
+                print("[Alignment] Stage 2: Whisper transcription completed in \(String(format: "%.1f", elapsed))s (\(segments.count) segments, cached)")
 
                 // Stage 3: Alignment matching
                 stageStart = CFAbsoluteTimeGetCurrent()
@@ -512,7 +773,32 @@ class ProjectViewModel: ObservableObject {
         isPlaying = false
         currentTime = 0
         duration = 0
+        cachedWhisperSegments = []
         statusMessage = "New project created."
+    }
+
+    // MARK: - Style Presets
+
+    /// Apply a style preset to the current project.
+    /// Copies subtitle and overlay style values; preserves title/artist text content.
+    func applyPreset(_ preset: StylePreset) {
+        project.subtitleStyle = preset.subtitleStyle
+        preset.overlayStyle.apply(to: &project.metadataOverlay)
+        project.touch()
+        isDirty = true
+        statusMessage = "프리셋 적용됨: \(preset.name)"
+    }
+
+    /// Save the current project style as a new named preset.
+    @discardableResult
+    func saveCurrentStyleAsPreset(name: String) -> StylePreset {
+        let preset = StylePresetStore.shared.savePreset(
+            name: name,
+            subtitleStyle: project.subtitleStyle,
+            metadataOverlay: project.metadataOverlay
+        )
+        statusMessage = "프리셋 저장됨: \(name)"
+        return preset
     }
 
     // MARK: - Helpers

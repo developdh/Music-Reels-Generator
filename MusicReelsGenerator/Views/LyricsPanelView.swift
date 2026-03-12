@@ -96,6 +96,12 @@ struct LyricBlockRow: View {
                     .foregroundColor(.secondary)
                     .frame(width: 30, alignment: .leading)
 
+                if block.isAnchor {
+                    Image(systemName: "lock.fill")
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                }
+
                 Spacer()
 
                 if let confidence = block.confidence {

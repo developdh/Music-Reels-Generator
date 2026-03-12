@@ -742,6 +742,101 @@ enum WhisperAlignmentService {
         }
     }
 
+    // MARK: - Public Region Re-Alignment
+
+    /// Re-align a bounded region of blocks using cached whisper segments.
+    /// Only modifies blocks within the given range that are not anchored/manually adjusted.
+    /// Anchored blocks serve as hard timing constraints.
+    ///
+    /// - Parameters:
+    ///   - segments: Full set of whisper segments from transcription
+    ///   - allBlocks: All lyric blocks (only the target range will be modified)
+    ///   - fromIndex: Start of target range (inclusive)
+    ///   - toIndex: End of target range (inclusive)
+    ///   - timeBefore: Hard left time boundary (from preceding anchor or 0)
+    ///   - timeAfter: Hard right time boundary (from following anchor or duration)
+    ///   - mode: Alignment quality mode
+    /// - Returns: Updated copy of allBlocks with only the target range re-aligned
+    static func realignRegion(
+        segments: [WhisperSegment],
+        allBlocks: [LyricBlock],
+        fromIndex: Int,
+        toIndex: Int,
+        timeBefore: Double,
+        timeAfter: Double,
+        mode: AlignmentQualityMode = .legacy
+    ) -> [LyricBlock] {
+        guard fromIndex >= 0, toIndex < allBlocks.count, fromIndex <= toIndex else {
+            return allBlocks
+        }
+
+        // Filter segments to the time range
+        let regionSegments = segments.filter { seg in
+            seg.startTime >= timeBefore - 1 && seg.endTime <= timeAfter + 1
+        }
+
+        guard !regionSegments.isEmpty else {
+            print("[LocalRealign] No segments found in time range \(String(format: "%.1f", timeBefore))–\(String(format: "%.1f", timeAfter))s")
+            return allBlocks
+        }
+
+        let regionBlocks = Array(allBlocks[fromIndex...toIndex])
+        let regionDuration = timeAfter - timeBefore
+
+        print("[LocalRealign] Re-aligning blocks \(fromIndex)–\(toIndex) in time range \(String(format: "%.1f", timeBefore))–\(String(format: "%.1f", timeAfter))s (\(regionSegments.count) segments)")
+
+        let localAligned = alignRegion(
+            segments: regionSegments,
+            blocks: regionBlocks,
+            regionStart: timeBefore,
+            regionEnd: timeAfter,
+            regionDuration: regionDuration,
+            mode: mode
+        )
+
+        // Merge results back — only update non-anchored blocks
+        var result = allBlocks
+        for j in 0..<localAligned.count {
+            let globalIdx = fromIndex + j
+            // Never overwrite anchored or manually adjusted blocks
+            if result[globalIdx].isAnchor || result[globalIdx].isManuallyAdjusted {
+                continue
+            }
+            // Only apply if we got a result (non-nil timing)
+            if localAligned[j].startTime != nil {
+                result[globalIdx].startTime = localAligned[j].startTime
+                result[globalIdx].endTime = localAligned[j].endTime
+                result[globalIdx].confidence = localAligned[j].confidence
+                result[globalIdx].isAnchor = localAligned[j].isAnchor
+            }
+        }
+
+        // Validate: ensure no backward time jumps across the whole result
+        for i in 1..<result.count {
+            if let prevStart = result[i - 1].startTime,
+               let curStart = result[i].startTime,
+               curStart < prevStart {
+                // Fix by pushing current forward
+                result[i].startTime = prevStart + 0.05
+                if let curEnd = result[i].endTime, curEnd <= result[i].startTime! {
+                    result[i].endTime = result[i].startTime! + 0.1
+                }
+            }
+        }
+
+        // Log changes
+        var changed = 0
+        for j in 0..<localAligned.count {
+            let globalIdx = fromIndex + j
+            if result[globalIdx].startTime != allBlocks[globalIdx].startTime {
+                changed += 1
+            }
+        }
+        print("[LocalRealign] Changed \(changed)/\(localAligned.count) blocks in region")
+
+        return result
+    }
+
     // MARK: - Drift Detection & Correction
 
     private struct DriftResult {

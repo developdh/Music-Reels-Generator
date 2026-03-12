@@ -149,12 +149,68 @@ struct BlockInspectorView: View {
                             Button("+0.5s") { vm.shiftFollowingBlocks(fromBlockID: block.id, delta: 0.5) }
                         }
                         .controlSize(.mini)
+                    }
+                }
 
-                        Toggle("Anchor", isOn: Binding(
-                            get: { block.isAnchor },
-                            set: { _ in vm.toggleAnchor(id: block.id) }
-                        ))
-                        .help("Anchor blocks are used as fixed timing references during alignment")
+                GroupBox("앵커 & 재보정") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Anchor controls
+                        HStack {
+                            if block.isAnchor {
+                                Label("앵커 고정됨", systemImage: "lock.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                                Spacer()
+                                Button("앵커 해제") {
+                                    vm.unsetAnchor(id: block.id)
+                                }
+                                .controlSize(.small)
+                            } else {
+                                Button("이 줄을 앵커로 고정") {
+                                    vm.setAnchor(id: block.id)
+                                }
+                                .controlSize(.small)
+                                .help("이 블록의 타이밍을 신뢰할 수 있는 기준점으로 고정합니다")
+                            }
+                        }
+
+                        if block.isManuallyAdjusted && !block.isAnchor {
+                            HStack(spacing: 4) {
+                                Image(systemName: "lightbulb.fill")
+                                    .foregroundColor(.yellow)
+                                    .font(.caption2)
+                                Text("수동 조정됨 — 앵커로 고정 권장")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Divider()
+
+                        // Piecewise correction between anchors
+                        Button("이전 앵커 ~ 다음 앵커 재보정") {
+                            vm.correctBetweenSurroundingAnchors()
+                        }
+                        .controlSize(.small)
+                        .disabled(!vm.hasSurroundingAnchors)
+                        .help("양쪽 앵커 사이의 블록 타이밍을 비례 배분합니다")
+
+                        Button("전체 앵커 구간 재보정") {
+                            vm.correctBetweenAllAnchors()
+                        }
+                        .controlSize(.small)
+                        .disabled(vm.anchorCount < 2)
+                        .help("모든 앵커 쌍 사이의 블록 타이밍을 재보정합니다")
+
+                        Divider()
+
+                        // Local re-alignment with legacy engine
+                        Button("이 구간 재정렬 (레거시 엔진)") {
+                            Task { await vm.localRealignSurroundingRegion() }
+                        }
+                        .controlSize(.small)
+                        .disabled(!vm.project.hasVideo || !vm.whisperAvailable || vm.isAligning)
+                        .help("이전~다음 앵커 사이를 whisper-cpp로 다시 정렬합니다")
                     }
                 }
             }
@@ -244,6 +300,9 @@ struct CropInspectorView: View {
 
 struct StyleInspectorView: View {
     @EnvironmentObject var vm: ProjectViewModel
+    @ObservedObject private var presetStore = StylePresetStore.shared
+    @State private var showSaveSheet = false
+    @State private var showManageSheet = false
 
     private var allFonts: [String] { FontUtility.allFamilies }
     private var jaDefaults: [String] { FontUtility.japaneseFamilies }
@@ -253,6 +312,51 @@ struct StyleInspectorView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Subtitle Style")
                 .font(.headline)
+
+            // Style Presets
+            GroupBox("프리셋") {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !presetStore.presets.isEmpty {
+                        HStack {
+                            Menu {
+                                ForEach(presetStore.presets) { preset in
+                                    Button(preset.name) {
+                                        vm.applyPreset(preset)
+                                    }
+                                }
+                            } label: {
+                                Label("프리셋 적용", systemImage: "paintbrush")
+                            }
+                            .menuStyle(.borderlessButton)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    } else {
+                        Text("저장된 프리셋 없음")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack(spacing: 8) {
+                        Button("현재 스타일 저장") {
+                            showSaveSheet = true
+                        }
+                        .controlSize(.small)
+
+                        if !presetStore.presets.isEmpty {
+                            Button("관리") {
+                                showManageSheet = true
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showSaveSheet) {
+                SavePresetSheet(vm: vm, presetStore: presetStore)
+            }
+            .sheet(isPresented: $showManageSheet) {
+                ManagePresetsSheet(vm: vm, presetStore: presetStore)
+            }
 
             GroupBox("Japanese Font") {
                 VStack(alignment: .leading, spacing: 8) {
@@ -825,5 +929,183 @@ struct SubtitleColorPicker: View {
                 .help(name)
             }
         }
+    }
+}
+
+// MARK: - Save Preset Sheet
+
+struct SavePresetSheet: View {
+    @ObservedObject var vm: ProjectViewModel
+    @ObservedObject var presetStore: StylePresetStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var presetName: String = ""
+    @State private var errorText: String?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("현재 스타일을 프리셋으로 저장")
+                .font(.headline)
+
+            TextField("프리셋 이름", text: $presetName)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 280)
+                .onSubmit { save() }
+
+            if let error = errorText {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+
+            Text("자막 스타일과 오버레이 스타일이 저장됩니다.\n곡 제목/아티스트 텍스트는 포함되지 않습니다.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+            HStack(spacing: 12) {
+                Button("취소") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+
+                Button("저장") { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(presetName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 320)
+    }
+
+    private func save() {
+        let trimmed = presetName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            errorText = "이름을 입력하세요."
+            return
+        }
+        if presetStore.nameExists(trimmed) {
+            errorText = "이미 같은 이름의 프리셋이 있습니다."
+            return
+        }
+        vm.saveCurrentStyleAsPreset(name: trimmed)
+        dismiss()
+    }
+}
+
+// MARK: - Manage Presets Sheet
+
+struct ManagePresetsSheet: View {
+    @ObservedObject var vm: ProjectViewModel
+    @ObservedObject var presetStore: StylePresetStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var editingID: UUID?
+    @State private var editName: String = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("프리셋 관리")
+                    .font(.headline)
+                Spacer()
+                Button("닫기") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding()
+
+            Divider()
+
+            if presetStore.presets.isEmpty {
+                VStack(spacing: 8) {
+                    Text("저장된 프리셋이 없습니다.")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(presetStore.presets) { preset in
+                        PresetRow(
+                            preset: preset,
+                            isEditing: editingID == preset.id,
+                            editName: editingID == preset.id ? $editName : .constant(""),
+                            onApply: {
+                                vm.applyPreset(preset)
+                                dismiss()
+                            },
+                            onStartRename: {
+                                editingID = preset.id
+                                editName = preset.name
+                            },
+                            onConfirmRename: {
+                                let trimmed = editName.trimmingCharacters(in: .whitespaces)
+                                if !trimmed.isEmpty {
+                                    presetStore.renamePreset(id: preset.id, newName: trimmed)
+                                }
+                                editingID = nil
+                            },
+                            onCancelRename: {
+                                editingID = nil
+                            },
+                            onDuplicate: {
+                                _ = presetStore.duplicatePreset(id: preset.id)
+                            },
+                            onDelete: {
+                                presetStore.deletePreset(id: preset.id)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        .frame(width: 420, height: 360)
+    }
+}
+
+struct PresetRow: View {
+    let preset: StylePreset
+    let isEditing: Bool
+    @Binding var editName: String
+    let onApply: () -> Void
+    let onStartRename: () -> Void
+    let onConfirmRename: () -> Void
+    let onCancelRename: () -> Void
+    let onDuplicate: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack {
+            if isEditing {
+                TextField("이름", text: $editName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { onConfirmRename() }
+
+                Button("확인") { onConfirmRename() }
+                    .controlSize(.small)
+                Button("취소") { onCancelRename() }
+                    .controlSize(.small)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(preset.name)
+                        .font(.body)
+                    Text("JP: \(preset.subtitleStyle.japaneseFontFamily) \(Int(preset.subtitleStyle.japaneseFontSize))pt")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Button("적용") { onApply() }
+                    .controlSize(.small)
+
+                Menu {
+                    Button("이름 변경") { onStartRename() }
+                    Button("복제") { onDuplicate() }
+                    Divider()
+                    Button("삭제", role: .destructive) { onDelete() }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 24)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
