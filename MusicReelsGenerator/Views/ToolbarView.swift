@@ -15,6 +15,15 @@ struct ToolbarView: View {
 
             Divider().frame(height: 20)
 
+            // Alignment quality mode
+            Picker("", selection: $vm.alignmentQualityMode) {
+                ForEach(AlignmentQualityMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .frame(width: 90)
+            .help("Alignment quality: higher = more accurate but slower")
+
             // Alignment
             Button {
                 Task { await vm.runAutoAlignment() }

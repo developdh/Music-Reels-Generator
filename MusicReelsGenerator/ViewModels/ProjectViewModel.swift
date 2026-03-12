@@ -30,6 +30,7 @@ class ProjectViewModel: ObservableObject {
     // MARK: - Alignment State
     @Published var isAligning: Bool = false
     @Published var alignmentProgress: String = ""
+    @Published var alignmentQualityMode: AlignmentQualityMode = .balanced
 
     // MARK: - Export State
     @Published var exportState: ExportState = .idle
@@ -335,7 +336,8 @@ class ProjectViewModel: ObservableObject {
             // Step 3: Align segments to lyric blocks
             let aligned = WhisperAlignmentService.align(
                 segments: segments,
-                to: project.lyricBlocks
+                to: project.lyricBlocks,
+                mode: alignmentQualityMode
             ) { [weak self] msg in
                 Task { @MainActor in
                     self?.alignmentProgress = msg
