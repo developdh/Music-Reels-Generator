@@ -312,14 +312,14 @@ class ProjectViewModel: ObservableObject {
 
     /// Number of anchor blocks in the project
     var anchorCount: Int {
-        project.lyricBlocks.filter { $0.isAnchor || $0.isTrustedAnchor }.count
+        project.lyricBlocks.filter { $0.isTrustedAnchor }.count
     }
 
     /// Whether the selected block has surrounding anchors for piecewise correction
     var hasSurroundingAnchors: Bool {
         guard let idx = selectedBlockIndex else { return false }
-        let hasLeft = project.lyricBlocks[..<idx].contains { $0.isAnchor || $0.isTrustedAnchor }
-        let hasRight = project.lyricBlocks[(idx + 1)...].contains { $0.isAnchor || $0.isTrustedAnchor }
+        let hasLeft = project.lyricBlocks[..<idx].contains { $0.isTrustedAnchor }
+        let hasRight = project.lyricBlocks[(idx + 1)...].contains { $0.isTrustedAnchor }
         return hasLeft || hasRight
     }
 
@@ -327,14 +327,14 @@ class ProjectViewModel: ObservableObject {
     private func surroundingAnchorIndices(for blockIndex: Int) -> (left: Int?, right: Int?) {
         var left: Int? = nil
         for i in stride(from: blockIndex - 1, through: 0, by: -1) {
-            if project.lyricBlocks[i].isAnchor || project.lyricBlocks[i].isTrustedAnchor {
+            if project.lyricBlocks[i].isTrustedAnchor {
                 left = i
                 break
             }
         }
         var right: Int? = nil
         for i in (blockIndex + 1)..<project.lyricBlocks.count {
-            if project.lyricBlocks[i].isAnchor || project.lyricBlocks[i].isTrustedAnchor {
+            if project.lyricBlocks[i].isTrustedAnchor {
                 right = i
                 break
             }
@@ -347,6 +347,7 @@ class ProjectViewModel: ObservableObject {
     func setAnchor(id: UUID) {
         guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
         project.lyricBlocks[idx].isAnchor = true
+        project.lyricBlocks[idx].isUserAnchor = true
         project.touch()
         isDirty = true
         statusMessage = "블록 #\(idx + 1) 앵커 고정"
@@ -355,6 +356,7 @@ class ProjectViewModel: ObservableObject {
     func unsetAnchor(id: UUID) {
         guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
         project.lyricBlocks[idx].isAnchor = false
+        project.lyricBlocks[idx].isUserAnchor = false
         project.touch()
         isDirty = true
         statusMessage = "블록 #\(idx + 1) 앵커 해제"
@@ -368,9 +370,9 @@ class ProjectViewModel: ObservableObject {
         let blocks = project.lyricBlocks
         guard blocks.count >= 2 else { return }
 
-        // Find all anchor indices (anchored or both-start-end manually set)
+        // Find all trusted anchor indices (user-set or both-start-end manually adjusted)
         let anchorIndices = blocks.indices.filter {
-            blocks[$0].isAnchor || blocks[$0].isTrustedAnchor
+            blocks[$0].isTrustedAnchor
         }
 
         guard anchorIndices.count >= 2 else {
@@ -424,10 +426,10 @@ class ProjectViewModel: ObservableObject {
         let availableTime = rightStart - leftEnd
         guard availableTime > 0.1 else { return 0 }
 
-        // Collect non-anchor/non-manual middle blocks
+        // Collect non-trusted-anchor middle blocks
         var middleIndices: [Int] = []
         for idx in (leftAnchorIdx + 1)..<rightAnchorIdx {
-            if !project.lyricBlocks[idx].isAnchor && !project.lyricBlocks[idx].isTrustedAnchor {
+            if !project.lyricBlocks[idx].isTrustedAnchor {
                 middleIndices.append(idx)
             }
         }
@@ -587,6 +589,9 @@ class ProjectViewModel: ObservableObject {
         alignmentProgress = "Starting alignment..."
         let pipelineStart = CFAbsoluteTimeGetCurrent()
 
+        // Save user-set anchors before alignment (alignment service overwrites isAnchor but not isUserAnchor)
+        let userAnchorIDs = Set(project.lyricBlocks.filter { $0.isUserAnchor }.map { $0.id })
+
         // Use defer to guarantee state cleanup, even on unexpected errors
         defer {
             isAligning = false
@@ -680,6 +685,12 @@ class ProjectViewModel: ObservableObject {
             }
 
             project.lyricBlocks = aligned
+
+            // Restore isUserAnchor flags — alignment service doesn't know about them
+            for i in project.lyricBlocks.indices {
+                project.lyricBlocks[i].isUserAnchor = userAnchorIDs.contains(project.lyricBlocks[i].id)
+            }
+
             project.touch()
             isDirty = true
 

@@ -156,8 +156,8 @@ struct BlockInspectorView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         // Anchor controls
                         HStack {
-                            if block.isAnchor {
-                                Label("앵커 고정됨", systemImage: "lock.fill")
+                            if block.isUserAnchor {
+                                Label("사용자 앵커", systemImage: "lock.fill")
                                     .font(.caption)
                                     .foregroundColor(.blue)
                                 Spacer()
@@ -165,6 +165,16 @@ struct BlockInspectorView: View {
                                     vm.unsetAnchor(id: block.id)
                                 }
                                 .controlSize(.small)
+                            } else if block.isAnchor {
+                                Label("자동 앵커", systemImage: "lock.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Button("사용자 앵커로 승격") {
+                                    vm.setAnchor(id: block.id)
+                                }
+                                .controlSize(.small)
+                                .help("이 자동 앵커를 사용자 앵커로 승격하여 재보정 기준점으로 사용합니다")
                             } else {
                                 Button("이 줄을 앵커로 고정") {
                                     vm.setAnchor(id: block.id)
@@ -174,7 +184,7 @@ struct BlockInspectorView: View {
                             }
                         }
 
-                        if block.isManuallyAdjusted && !block.isAnchor {
+                        if block.isManuallyAdjusted && !block.isUserAnchor {
                             HStack(spacing: 4) {
                                 Image(systemName: "lightbulb.fill")
                                     .foregroundColor(.yellow)
@@ -901,7 +911,9 @@ struct SubtitleColorPicker: View {
     var body: some View {
         HStack {
             Text(label)
-                .frame(width: 36, alignment: .trailing)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(width: 42, alignment: .trailing)
 
             ColorPicker(
                 "",

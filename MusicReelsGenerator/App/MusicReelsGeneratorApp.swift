@@ -1,7 +1,41 @@
 import SwiftUI
+import AppKit
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Ensure the app is recognized as a regular GUI application
+        // (needed when running as a bare executable, not a .app bundle)
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.contains(.command),
+                  let chars = event.charactersIgnoringModifiers else { return event }
+
+            let action: Selector? = switch chars {
+            case "v": #selector(NSText.paste(_:))
+            case "c": #selector(NSText.copy(_:))
+            case "x": #selector(NSText.cut(_:))
+            case "a": #selector(NSText.selectAll(_:))
+            case "z": event.modifierFlags.contains(.shift)
+                ? #selector(UndoManager.redo)
+                : #selector(UndoManager.undo)
+            default: nil
+            }
+
+            if let action, let responder = NSApp.keyWindow?.firstResponder,
+               responder.responds(to: action) {
+                responder.perform(action, with: nil)
+                return nil
+            }
+            return event
+        }
+    }
+}
 
 @main
 struct MusicReelsGeneratorApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var viewModel = ProjectViewModel()
 
     var body: some Scene {
@@ -12,6 +46,7 @@ struct MusicReelsGeneratorApp: App {
         }
         .windowStyle(.titleBar)
         .commands {
+            TextEditingCommands()
             CommandGroup(replacing: .newItem) {
                 Button("New Project") {
                     viewModel.newProject()

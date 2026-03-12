@@ -47,6 +47,7 @@ enum ProcessRunner {
             let stderrPipe = Pipe()
             process.standardOutput = stdoutPipe
             process.standardError = stderrPipe
+            process.standardInput = FileHandle.nullDevice
 
             // Drain pipes on background threads BEFORE termination to prevent deadlock.
             // readDataToEndOfFile() blocks until the write end is closed (process exit).
@@ -145,6 +146,7 @@ enum ProcessRunner {
             let stderrPipe = Pipe()
             process.standardOutput = stdoutPipe
             process.standardError = stderrPipe
+            process.standardInput = FileHandle.nullDevice
 
             let stdoutBox = DataBox()
             let stderrBox = DataBox()

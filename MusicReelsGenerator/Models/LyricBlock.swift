@@ -9,16 +9,20 @@ struct LyricBlock: Identifiable, Equatable {
     var confidence: Double?
     var manuallyAdjustedStart: Bool
     var manuallyAdjustedEnd: Bool
+    /// Set by alignment service based on textScore, used for alignment internal logic
     var isAnchor: Bool
+    /// Set only by user via setAnchor(), used for piecewise correction
+    var isUserAnchor: Bool
 
     /// True if either start or end was manually adjusted
     var isManuallyAdjusted: Bool {
         manuallyAdjustedStart || manuallyAdjustedEnd
     }
 
-    /// True if this block should be treated as a hard timing constraint
+    /// True if this block should be treated as a hard timing constraint for correction.
+    /// Only user-set anchors and fully manually adjusted blocks qualify.
     var isTrustedAnchor: Bool {
-        isAnchor || (manuallyAdjustedStart && manuallyAdjustedEnd)
+        isUserAnchor || (manuallyAdjustedStart && manuallyAdjustedEnd)
     }
 
     init(
@@ -30,7 +34,8 @@ struct LyricBlock: Identifiable, Equatable {
         confidence: Double? = nil,
         manuallyAdjustedStart: Bool = false,
         manuallyAdjustedEnd: Bool = false,
-        isAnchor: Bool = false
+        isAnchor: Bool = false,
+        isUserAnchor: Bool = false
     ) {
         self.id = id
         self.japanese = japanese
@@ -41,6 +46,7 @@ struct LyricBlock: Identifiable, Equatable {
         self.manuallyAdjustedStart = manuallyAdjustedStart
         self.manuallyAdjustedEnd = manuallyAdjustedEnd
         self.isAnchor = isAnchor
+        self.isUserAnchor = isUserAnchor
     }
 
     var hasTimingData: Bool {
@@ -65,7 +71,7 @@ extension LyricBlock: Codable {
         case id, japanese, korean, startTime, endTime, confidence
         case manuallyAdjustedStart, manuallyAdjustedEnd
         case isManuallyAdjusted // legacy key for backward compat decode only
-        case isAnchor
+        case isAnchor, isUserAnchor
     }
 
     init(from decoder: Decoder) throws {
@@ -77,6 +83,8 @@ extension LyricBlock: Codable {
         endTime = try container.decodeIfPresent(Double.self, forKey: .endTime)
         confidence = try container.decodeIfPresent(Double.self, forKey: .confidence)
         isAnchor = try container.decodeIfPresent(Bool.self, forKey: .isAnchor) ?? false
+        // Backward compat: old files without isUserAnchor — treat isAnchor as user anchor
+        isUserAnchor = try container.decodeIfPresent(Bool.self, forKey: .isUserAnchor) ?? isAnchor
 
         // New granular fields with backward compat from legacy isManuallyAdjusted
         if let adjStart = try container.decodeIfPresent(Bool.self, forKey: .manuallyAdjustedStart) {
@@ -101,6 +109,6 @@ extension LyricBlock: Codable {
         try container.encode(manuallyAdjustedStart, forKey: .manuallyAdjustedStart)
         try container.encode(manuallyAdjustedEnd, forKey: .manuallyAdjustedEnd)
         try container.encode(isAnchor, forKey: .isAnchor)
-        // Note: isManuallyAdjusted NOT encoded — it's computed from the two granular flags
+        try container.encode(isUserAnchor, forKey: .isUserAnchor)
     }
 }

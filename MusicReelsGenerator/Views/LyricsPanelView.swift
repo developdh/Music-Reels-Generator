@@ -96,10 +96,14 @@ struct LyricBlockRow: View {
                     .foregroundColor(.secondary)
                     .frame(width: 30, alignment: .leading)
 
-                if block.isAnchor {
+                if block.isUserAnchor {
                     Image(systemName: "lock.fill")
                         .font(.caption2)
                         .foregroundColor(.blue)
+                } else if block.isAnchor {
+                    Image(systemName: "lock.fill")
+                        .font(.caption2)
+                        .foregroundColor(.secondary.opacity(0.5))
                 }
 
                 Spacer()
@@ -182,8 +186,7 @@ struct LyricsInputSheet: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            TextEditor(text: $text)
-                .font(.system(size: 13, design: .monospaced))
+            NativeTextEditor(text: $text)
                 .frame(minWidth: 400, minHeight: 300)
                 .border(Color.secondary.opacity(0.3))
 
