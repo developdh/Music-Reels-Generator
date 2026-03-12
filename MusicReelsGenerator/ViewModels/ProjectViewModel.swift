@@ -30,7 +30,7 @@ class ProjectViewModel: ObservableObject {
     // MARK: - Alignment State
     @Published var isAligning: Bool = false
     @Published var alignmentProgress: String = ""
-    @Published var alignmentQualityMode: AlignmentQualityMode = .balanced
+    @Published var alignmentQualityMode: AlignmentQualityMode = .legacy
 
     // MARK: - Export State
     @Published var exportState: ExportState = .idle
@@ -68,7 +68,13 @@ class ProjectViewModel: ObservableObject {
     func checkToolAvailability() {
         ffmpegAvailable = ProcessRunner.findFFmpeg() != nil
         whisperAvailable = ProcessRunner.findWhisper() != nil
-        checkAdvancedPipelineAvailability()
+        // Check advanced pipeline off the main thread (import whisper can take ~1s)
+        Task.detached {
+            let available = AdvancedAlignmentService.isAvailable
+            await MainActor.run { [weak self] in
+                self?.advancedPipelineAvailable = available
+            }
+        }
     }
 
     // MARK: - Video Import
@@ -292,10 +298,6 @@ class ProjectViewModel: ObservableObject {
 
     @Published var advancedPipelineAvailable: Bool = false
 
-    func checkAdvancedPipelineAvailability() {
-        advancedPipelineAvailable = AdvancedAlignmentService.isAvailable
-    }
-
     // MARK: - Auto Alignment
 
     func runAutoAlignment() async {
@@ -312,18 +314,33 @@ class ProjectViewModel: ObservableObject {
             return
         }
 
-        // For Fast mode, require whisper-cpp. For advanced modes, require Python pipeline.
+        // Legacy mode uses whisper-cpp, all others use Python pipeline.
         let useAdvanced = alignmentQualityMode.usesAdvancedPipeline && advancedPipelineAvailable
-        if !useAdvanced && !whisperAvailable {
+        if alignmentQualityMode.usesLegacyPipeline && !whisperAvailable {
             showError("whisper.cpp not found. Install with: brew install whisper-cpp")
+            return
+        }
+        if alignmentQualityMode.usesAdvancedPipeline && !advancedPipelineAvailable {
+            showError("Python pipeline not available. Run: cd Scripts && ./setup_alignment.sh")
             return
         }
 
         isAligning = true
         alignmentProgress = "Starting alignment..."
+        let pipelineStart = CFAbsoluteTimeGetCurrent()
+
+        // Use defer to guarantee state cleanup, even on unexpected errors
+        defer {
+            isAligning = false
+            alignmentProgress = ""
+        }
 
         do {
-            // Step 1: Extract audio (needed by both pipelines)
+            // Stage 1: Extract audio
+            var stageStart = CFAbsoluteTimeGetCurrent()
+            alignmentProgress = "Stage 1: Extracting audio..."
+            print("[Alignment] Stage 1: Audio extraction starting")
+
             let tempDir = NSTemporaryDirectory()
             let audioURL = URL(fileURLWithPath: tempDir + "audio_\(project.id.uuidString).wav")
 
@@ -332,41 +349,60 @@ class ProjectViewModel: ObservableObject {
                 to: audioURL
             ) { [weak self] msg in
                 Task { @MainActor in
-                    self?.alignmentProgress = msg
+                    self?.alignmentProgress = "Stage 1: \(msg)"
                 }
             }
+
+            var elapsed = CFAbsoluteTimeGetCurrent() - stageStart
+            print("[Alignment] Stage 1: Audio extraction completed in \(String(format: "%.1f", elapsed))s")
 
             let aligned: [LyricBlock]
 
             if useAdvanced {
-                // Advanced pipeline: Python-based forced alignment
-                alignmentProgress = "Running advanced alignment pipeline..."
+                // Stage 2: Advanced pipeline
+                stageStart = CFAbsoluteTimeGetCurrent()
+                alignmentProgress = "Stage 2: Running advanced alignment pipeline..."
+                print("[Alignment] Stage 2: Advanced pipeline starting (\(alignmentQualityMode.rawValue) mode)")
+
                 aligned = try await AdvancedAlignmentService.align(
                     audioURL: audioURL,
                     lyrics: project.lyricBlocks,
                     mode: alignmentQualityMode
                 ) { [weak self] msg in
                     Task { @MainActor in
-                        self?.alignmentProgress = msg
+                        self?.alignmentProgress = "Stage 2: \(msg)"
                     }
                 }
+
+                elapsed = CFAbsoluteTimeGetCurrent() - stageStart
+                print("[Alignment] Stage 2: Advanced pipeline completed in \(String(format: "%.1f", elapsed))s")
             } else {
-                // Legacy pipeline: whisper-cpp segment matching
+                // Stage 2a: Whisper transcription
+                stageStart = CFAbsoluteTimeGetCurrent()
+                alignmentProgress = "Stage 2: Running whisper transcription..."
+                print("[Alignment] Stage 2: Whisper transcription starting")
+
                 if !whisperAvailable {
                     showError("whisper.cpp not found and advanced pipeline not available. "
                               + "Install whisper-cpp with: brew install whisper-cpp, "
                               + "or set up the advanced pipeline: cd Scripts && ./setup_alignment.sh")
-                    isAligning = false
-                    alignmentProgress = ""
                     return
                 }
                 let segments = try await WhisperAlignmentService.transcribe(
                     audioURL: audioURL
                 ) { [weak self] msg in
                     Task { @MainActor in
-                        self?.alignmentProgress = msg
+                        self?.alignmentProgress = "Stage 2: \(msg)"
                     }
                 }
+
+                elapsed = CFAbsoluteTimeGetCurrent() - stageStart
+                print("[Alignment] Stage 2: Whisper transcription completed in \(String(format: "%.1f", elapsed))s (\(segments.count) segments)")
+
+                // Stage 3: Alignment matching
+                stageStart = CFAbsoluteTimeGetCurrent()
+                alignmentProgress = "Stage 3: Matching lyrics..."
+                print("[Alignment] Stage 3: Lyric matching starting")
 
                 aligned = WhisperAlignmentService.align(
                     segments: segments,
@@ -374,27 +410,31 @@ class ProjectViewModel: ObservableObject {
                     mode: alignmentQualityMode
                 ) { [weak self] msg in
                     Task { @MainActor in
-                        self?.alignmentProgress = msg
+                        self?.alignmentProgress = "Stage 3: \(msg)"
                     }
                 }
+
+                elapsed = CFAbsoluteTimeGetCurrent() - stageStart
+                print("[Alignment] Stage 3: Lyric matching completed in \(String(format: "%.1f", elapsed))s")
             }
 
             project.lyricBlocks = aligned
             project.touch()
             isDirty = true
 
+            let totalElapsed = CFAbsoluteTimeGetCurrent() - pipelineStart
             let matched = aligned.filter { ($0.confidence ?? 0) > 0.5 }.count
-            statusMessage = "Alignment complete: \(matched)/\(aligned.count) blocks matched with good confidence."
+            statusMessage = "Alignment complete: \(matched)/\(aligned.count) blocks matched (\(String(format: "%.1f", totalElapsed))s)"
+            print("[Alignment] Pipeline complete in \(String(format: "%.1f", totalElapsed))s — \(matched)/\(aligned.count) blocks matched")
 
             // Cleanup
             try? FileManager.default.removeItem(at: audioURL)
 
         } catch {
+            let totalElapsed = CFAbsoluteTimeGetCurrent() - pipelineStart
+            print("[Alignment] Pipeline FAILED after \(String(format: "%.1f", totalElapsed))s: \(error.localizedDescription)")
             showError(error.localizedDescription)
         }
-
-        isAligning = false
-        alignmentProgress = ""
     }
 
     // MARK: - Export

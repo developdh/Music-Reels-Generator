@@ -1,105 +1,63 @@
 import Foundation
 
 enum AlignmentQualityMode: String, Codable, CaseIterable, Identifiable {
-    case fast = "Fast"
-    case balanced = "Balanced"
-    case accurate = "Accurate"
-    case maximum = "Maximum"
+    case legacy = "Recommended"
+    case baseline = "Exp: Segment"
+    case refined = "Exp: Refined"
+    case experimental = "Exp: Hybrid"
 
     var id: String { rawValue }
 
-    /// Beam width for DP search
-    var beamWidth: Int {
-        switch self {
-        case .fast: return 30
-        case .balanced: return 80
-        case .accurate: return 200
-        case .maximum: return 500
-        }
+    /// Whether this mode uses the production whisper-cpp CLI pipeline (Swift-only)
+    var usesLegacyPipeline: Bool {
+        self == .legacy
     }
 
-    /// Minimum text similarity to consider a candidate
-    var matchThreshold: Double {
-        switch self {
-        case .fast: return 0.30
-        case .balanced: return 0.25
-        case .accurate: return 0.20
-        case .maximum: return 0.15
-        }
-    }
-
-    /// How many consecutive whisper segments can be combined for one block
-    var maxCombineSegments: Int {
-        switch self {
-        case .fast: return 2
-        case .balanced: return 3
-        case .accurate: return 4
-        case .maximum: return 5
-        }
-    }
-
-    /// Search window radius in seconds around expected position
-    var searchWindowSeconds: Double {
-        switch self {
-        case .fast: return 20
-        case .balanced: return 30
-        case .accurate: return 45
-        case .maximum: return 60
-        }
-    }
-
-    /// Number of refinement passes
-    var refinementPasses: Int {
-        switch self {
-        case .fast: return 1
-        case .balanced: return 2
-        case .accurate: return 3
-        case .maximum: return 3
-        }
-    }
-
-    /// Weight of positional scoring (0 = text only, 1 = position dominates)
-    var positionWeight: Double {
-        switch self {
-        case .fast: return 0.3
-        case .balanced: return 0.35
-        case .accurate: return 0.4
-        case .maximum: return 0.4
-        }
-    }
-
-    /// Whether this mode should use the advanced Python-based pipeline
+    /// Whether this mode routes through the experimental Python pipeline
     var usesAdvancedPipeline: Bool {
-        switch self {
-        case .fast: return false
-        case .balanced: return true
-        case .accurate: return true
-        case .maximum: return true
-        }
+        !usesLegacyPipeline
+    }
+
+    /// Whether this is an experimental (non-production) mode
+    var isExperimental: Bool {
+        self != .legacy
     }
 
     /// Mode name passed to the Python pipeline
     var pipelineModeName: String {
         switch self {
-        case .fast: return "fast"
-        case .balanced: return "balanced"
-        case .accurate: return "accurate"
-        case .maximum: return "maximum"
+        case .legacy:       return "fast"
+        case .baseline:     return "baseline"
+        case .refined:      return "refined"
+        case .experimental: return "experimental"
         }
     }
 
     /// Whisper model override for the Python pipeline (nil = use pipeline default)
     var whisperModelOverride: String? {
-        return nil // Let the pipeline choose based on mode
+        return nil
     }
+
+    // MARK: - Legacy pipeline parameters (used by WhisperAlignmentService)
+
+    var beamWidth: Int { 80 }
+    var matchThreshold: Double { 0.25 }
+    var maxCombineSegments: Int { 3 }
+    var searchWindowSeconds: Double { 30 }
+    var refinementPasses: Int { 2 }
+    var positionWeight: Double { 0.35 }
 
     /// Description for UI
     var description: String {
         switch self {
-        case .fast: return "Legacy whisper-cpp, quick line matching"
-        case .balanced: return "Word-level forced alignment + global DP"
-        case .accurate: return "Vocal separation + character-level alignment"
-        case .maximum: return "Full pipeline + collapse recovery + extended search"
+        case .legacy:
+            return "Production: whisper-cpp segment matching (recommended)"
+        case .baseline:
+            return "Experimental: Python segment-level Levenshtein matching"
+        case .refined:
+            return "Experimental: Python baseline + gated local refinement"
+        case .experimental:
+            return "Experimental: Python ungated hybrid pipeline"
         }
     }
 }

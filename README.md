@@ -8,21 +8,19 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 
 - **Video Import** — Load any local video file (.mp4, .mov, .avi), extract metadata (dimensions, duration, FPS, file size), preview in-app with AVPlayerLayer
 - **Bilingual Lyrics Parser** — Paste Japanese + Korean lyrics in a simple block format (2 lines per block, blank line separator)
-- **Dual Alignment Engine** — Two alignment pipelines with 4 quality modes:
-  - **Fast** — whisper-cpp segment matching with position-aware beam-search DP
-  - **Balanced / Accurate / Maximum** — Python-based character-level forced alignment with word-level whisper timestamps, banded DTW, VAD-based chunking, global monotonic DP, and collapse detection/recovery
-- **Character-Level Forced Alignment** — Advanced modes convert lyrics to hiragana via G2P (pykakasi), expand whisper words to character-level timing, and align via banded DTW. Line boundaries are derived from character matches, not guessed from ASR segments
-- **Vocal Separation** — Accurate/Maximum modes optionally use demucs to separate vocals from accompaniment before transcription, significantly improving recognition quality for music
-- **Collapse Detection & Recovery** — Detects alignment degradation (sudden confidence drops, impossible durations, backwards time jumps) and re-anchors collapsed regions with wider search windows
+- **Production Alignment Engine** — whisper-cpp segment matching with position-aware beam-search DP, drift detection, boundary snap, and multi-pass refinement. Selected as production default for consistently best results on singing audio
+- **Experimental Pipelines** — Three additional Python-based alignment modes for A/B comparison: segment-level Levenshtein, gated refinement, and ungated hybrid. These are clearly labeled as experimental and isolated from production output
+- **Drift Detection** — Automatically detects runs of blocks with systematic positional drift (e.g., from chorus confusion) and re-anchors them against local segments
+- **Boundary Snap** — Post-alignment step that snaps block start/end times to nearest whisper segment edges for tighter subtitle timing
 - **Confidence Scoring** — Each block gets a 0–1 confidence score. Low-confidence blocks are visually flagged (orange border) for manual review. Interpolated blocks show ~0.05 confidence
-- **Anchor System** — High-confidence matches (≥0.5 in advanced, ≥0.6 in legacy) and manually adjusted blocks become anchors. Unmatched blocks are interpolated proportionally between anchors based on kana text length
-- **Manual Timing Correction** — Set start/end times from playback position, shift all following blocks by a delta, fine-grained nudge (±0.1s / ±0.5s), keyboard shortcuts (Cmd+[ / Cmd+])
+- **Anchor System** — High-confidence matches (>=0.6) and manually adjusted blocks become anchors. Unmatched blocks are interpolated proportionally between anchors based on kana text length
+- **Manual Timing Correction** — Set start/end times from playback position, shift all following blocks by a delta, fine-grained nudge (+-0.1s / +-0.5s), keyboard shortcuts (Cmd+[ / Cmd+])
 - **Video Trimming** — Non-destructive trim in/out to cut intros, outros, or shorten the final reel. Trim range is enforced in preview playback (auto-stop at trim end, jump to trim start on play) and applied during export via FFmpeg seek
 - **Vertical Reframing** — Crop any aspect ratio video to 9:16 with adjustable horizontal and vertical offset sliders. Cover-mode scaling ensures no black bars
 - **Subtitle Styling** — Independent Japanese/Korean font family selection (with recommended CJK fonts: Hiragino Sans, Apple SD Gothic Neo, etc.), font size (JP: 24–120, KR: 20–100), per-language text color with color pickers and 5 preset swatches, outline width (0–8 px), shadow toggle, bottom margin (50–960, up to screen center), line spacing
 - **Metadata Overlay** — Optional top-left title/artist overlay with dark rounded background box. Independent font, size, and color controls for title and artist. Configurable background opacity, corner radius, padding, and position margins
-- **Unified Preview/Export Rendering** — Both preview and export use the same Core Graphics subtitle renderer (`SubtitleRenderer`), rendering at 1080×1920 canvas with multi-pass outline/shadow/fill. Preview displays a scaled-down version, ensuring pixel-identical typography
-- **Two-Stage Export** — Stage 1: FFmpeg trim + crop/scale to 1080×1920 (H.264 CRF 18, AAC 192k). Stage 2: AVAssetReader/Writer frame-by-frame burn-in of metadata overlay + subtitle CGImage overlays
+- **Unified Preview/Export Rendering** — Both preview and export use the same Core Graphics subtitle renderer (`SubtitleRenderer`), rendering at 1080x1920 canvas with multi-pass outline/shadow/fill. Preview displays a scaled-down version, ensuring pixel-identical typography
+- **Two-Stage Export** — Stage 1: FFmpeg trim + crop/scale to 1080x1920 (H.264 CRF 18, AAC 192k). Stage 2: AVAssetReader/Writer frame-by-frame burn-in of metadata overlay + subtitle CGImage overlays
 - **Project Persistence** — Save/load projects as `.mreels` JSON files with backward compatibility for older formats (missing fields get defaults via custom `Decodable` initializers)
 
 ## Requirements
@@ -31,24 +29,24 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 - **Xcode 15+** or Swift 5.9+ toolchain
 - **FFmpeg** — audio extraction, video crop/scale/trim/encode
 
-### For Fast mode (legacy)
+### For production alignment (Recommended mode)
 - **whisper-cpp** — offline Japanese speech recognition (binary: `whisper-cli`)
 - **Whisper model file** — e.g., `ggml-medium.bin` (~1.5 GB)
 
-### For Balanced / Accurate / Maximum modes (advanced)
+### For experimental pipelines (Exp: Segment / Refined / Hybrid)
 - **Python 3** — subprocess host for the alignment pipeline
 - **openai-whisper** — word-level speech recognition with cross-attention timestamps
 - **pykakasi** — Japanese kanji-to-kana G2P conversion
 - **numpy** — audio energy analysis and array operations
-- **demucs** (optional) — vocal stem separation for Accurate/Maximum modes
+- **demucs** (optional) — vocal stem separation
 
 ## Quick Setup
 
 ```bash
-# Install FFmpeg and whisper-cpp (for Fast mode)
+# Install FFmpeg and whisper-cpp (required for production alignment)
 ./setup.sh
 
-# Install advanced alignment pipeline (for Balanced+ modes, recommended)
+# Optional: install experimental Python pipeline
 cd Scripts && ./setup_alignment.sh
 ```
 
@@ -62,13 +60,13 @@ cd Scripts && ./setup_alignment.sh
 # FFmpeg (required)
 brew install ffmpeg
 
-# whisper-cpp (Fast mode only)
+# whisper-cpp (required for production alignment)
 brew install whisper-cpp
 mkdir -p ~/.local/share/whisper-cpp/models
 curl -L "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin" \
   -o ~/.local/share/whisper-cpp/models/ggml-medium.bin
 
-# Advanced pipeline (Balanced+ modes)
+# Experimental Python pipeline (optional)
 pip3 install openai-whisper pykakasi numpy
 pip3 install demucs  # optional, for vocal separation
 ```
@@ -95,15 +93,14 @@ Then press Cmd+R to build and run.
 ## Quick Start with Example Video
 
 ```bash
-./setup.sh                           # Install FFmpeg, whisper-cpp
-cd Scripts && ./setup_alignment.sh   # Install advanced pipeline
-cd .. && ./build.sh                  # Build the app
+./setup.sh       # Install FFmpeg, whisper-cpp
+./build.sh       # Build the app
 open ".build/Music Reels Generator.app"
 ```
 
 1. Import `GreenlightsSerenade3.mp4` from the project root
 2. Paste bilingual lyrics (Japanese + Korean)
-3. Select quality mode (Balanced recommended) and click "Auto-Align"
+3. Keep the default "Recommended" mode and click "Auto-Align"
 4. Adjust crop, trim, subtitle styling, and metadata overlay
 5. Export the final vertical video
 
@@ -135,40 +132,40 @@ Rules:
 
 ### 3. Auto-Align
 
-Select a quality mode from the toolbar dropdown, then click "Auto-Align". The toolbar shows status badges for FFmpeg (green/red), Whisper (green/red for whisper-cpp), and Advanced (green/red for Python pipeline).
+Select an alignment mode from the toolbar dropdown, then click "Auto-Align". The toolbar shows status badges for FFmpeg (green/red), Whisper (green/red for whisper-cpp), and Python (Exp) (green/red for experimental pipeline availability).
 
-**Quality Modes:**
+**Alignment Modes:**
 
-| Mode | Pipeline | Whisper | Chunking | DTW | Collapse Detection | Beam Width |
-|------|----------|---------|----------|-----|--------------------|------------|
-| Fast | whisper-cpp (legacy) | segment-level | position-based windows | line-level text matching | refinement passes | 30 |
-| Balanced | Python (advanced) | word-level (medium) | VAD energy-based, 15s target | character-level banded DTW | yes, 1 recovery pass | 80 |
-| Accurate | Python (advanced) | word-level (large-v3) + vocal separation | VAD energy-based, 12s target | character-level banded DTW | yes, 2 recovery passes | 200 |
-| Maximum | Python (advanced) | word-level (large-v3) + vocal separation | VAD energy-based, 10s target | character-level banded DTW | yes, 3 recovery passes | 500 |
+| Mode | Label | Pipeline | Status |
+|------|-------|----------|--------|
+| Recommended | `Recommended` | whisper-cpp (Swift) | **Production default** |
+| Exp: Segment | `Exp: Segment` | Python segment-level Levenshtein | Experimental |
+| Exp: Refined | `Exp: Refined` | Python baseline + gated DTW refinement | Experimental |
+| Exp: Hybrid | `Exp: Hybrid` | Python ungated hybrid pipeline | Experimental |
 
-**Fast mode pipeline:**
+The **Recommended** mode is selected by default and consistently produces the best alignment quality for singing audio. The experimental Python modes are available for A/B comparison but are not recommended for production use.
+
+**Recommended mode pipeline:**
 1. Extract audio as 16kHz mono WAV (FFmpeg)
 2. Transcribe with whisper-cpp (`--output-csv`, sentence-level segments)
 3. Merge short fragments (<0.3s)
-4. Position-aware candidate generation with windowed search
-5. Monotonic beam-search DP assignment
-6. Multi-pass refinement of low-confidence regions
-7. Anchor-based proportional interpolation
+4. Detect vocal onset from first speech segment
+5. Position-aware candidate generation with windowed search (30s radius)
+6. Monotonic beam-search DP assignment (beam width 80)
+7. Multi-pass refinement of low-confidence regions between anchors
+8. Drift detection — identifies runs of 3+ weak blocks with systematic positional shift and re-anchors them
+9. Anchor-based proportional interpolation (by kana character count, starting from vocal onset)
+10. Boundary snap — snaps block edges to nearest whisper segment boundaries (within 0.3s)
 
-**Advanced pipeline (Balanced+):**
+**Experimental Python pipeline (Exp modes):**
 1. Extract audio as 16kHz mono WAV (FFmpeg)
-2. Optional vocal separation via demucs (Accurate/Maximum)
-3. Transcribe with openai-whisper Python (`word_timestamps=True`, cross-attention weights)
-4. Convert Japanese lyrics to hiragana via G2P (pykakasi kanji→kana, katakana→hiragana, punctuation removal)
-5. Expand whisper words to character-level timing (proportional distribution within each word)
-6. Full-song character-level banded DTW as baseline alignment
-7. VAD-based chunking at low-energy boundaries (RMS energy analysis, independent of lyric timestamps)
-8. Per-chunk character-level DTW alignment against multiple candidate lyric windows
-9. Global monotonic DP to select best path across all chunks (continuity bonuses, gap penalties)
-10. Collapse detection (sudden confidence drops, impossible durations, backwards time jumps, large gaps)
-11. Re-anchoring of collapsed regions with wider search windows
-12. Line timing reconstruction from first/last matched character per line
-13. Proportional interpolation for remaining unmatched lines by kana length
+2. Transcribe with openai-whisper Python (`word_timestamps=True`, cross-attention weights)
+3. Convert Japanese lyrics to hiragana via G2P (pykakasi kanji->kana, katakana->hiragana)
+4. Strategy depends on mode:
+   - **Exp: Segment** — Groups whisper words into pseudo-segments, applies position-aware Levenshtein matching (mirrors production algorithm)
+   - **Exp: Refined** — Segment baseline + gated local DTW refinement with 7 validation gates (shift limits, confidence gain, monotonic order, duration sanity, gap limits)
+   - **Exp: Hybrid** — Ungated ASR anchors + character-level DTW (for comparison only)
+5. Proportional interpolation for remaining unmatched lines
 
 ### 4. Fix Timing
 
@@ -176,14 +173,14 @@ Select a quality mode from the toolbar dropdown, then click "Auto-Align". The to
 - Use playback controls to seek to the right moment
 - Click "Set Now" for start/end time, or use Cmd+[ / Cmd+]
 - **Shift following blocks**: In the Inspector > Block > Correction section, use "Set Start & Shift Following" to move this block and all subsequent blocks by the same delta
-- **Fine-grained nudge**: Use ±0.1s / ±0.5s buttons to shift from the selected block onward
+- **Fine-grained nudge**: Use +-0.1s / +-0.5s buttons to shift from the selected block onward
 - **Anchor toggle**: Mark a block as an anchor so it stays fixed during re-alignment
 - Manually adjusted blocks show a blue "Manual" badge; confidence is set to 1.0
 
 ### 5. Trim Video
 
 In the Inspector > Trim tab:
-- Set trim start and end times using "Set to Current" or ±0.1s / ±1s nudge buttons
+- Set trim start and end times using "Set to Current" or +-0.1s / +-1s nudge buttons
 - The trim bar shows a visual overview of the selected range (accent color indicator under scrubber)
 - Playback respects the trim range: stops at trim end, jumps to trim start when pressing play
 - "Reset Trim" restores the full video duration
@@ -192,8 +189,8 @@ In the Inspector > Trim tab:
 ### 6. Adjust Crop
 
 In the Inspector > Crop tab:
-- Adjust the horizontal offset slider (L–R) to position the vertical crop window
-- Adjust the vertical offset slider (T–B) for vertical positioning
+- Adjust the horizontal offset slider (L-R) to position the vertical crop window
+- Adjust the vertical offset slider (T-B) for vertical positioning
 - Click "Center H" / "Center V" to reset
 - The preview shows the 9:16 frame in real-time with cover-mode scaling
 
@@ -222,7 +219,7 @@ In the Inspector > Overlay tab:
 ### 9. Export
 
 Click "Export" in the toolbar. Choose a save location. The app will:
-1. Trim and crop the video to 1080×1920 via FFmpeg (`-ss` seek + `-t` duration, H.264 CRF 18, fast preset, AAC 192k)
+1. Trim and crop the video to 1080x1920 via FFmpeg (`-ss` seek + `-t` duration, H.264 CRF 18, fast preset, AAC 192k)
 2. Remap lyric timing to trim-relative coordinates via `TrimTimingUtility` (blocks outside the range are omitted, overlapping blocks are clamped)
 3. Pre-render all subtitle blocks as CGImages via `SubtitleRenderer` (multi-pass outline + shadow + fill)
 4. Pre-render the metadata overlay as a single CGImage (composited onto every frame)
@@ -262,22 +259,22 @@ Click "Export" in the toolbar. Choose a save location. The app will:
 ```
 MusicReelsGenerator/
 ├── App/
-│   └── MusicReelsGeneratorApp     # @main, window config (1100×700 min), menu commands
+│   └── MusicReelsGeneratorApp     # @main, window config (1100x700 min), menu commands
 ├── Models/
 │   ├── Project                    # Root aggregate: video, metadata, blocks, styles, trim, overlay
 │   ├── LyricBlock                 # Japanese + Korean text, timing, confidence, anchor/manual flags
 │   ├── VideoMetadata              # Dimensions, duration, FPS, file size, aspect ratio detection
-│   ├── CropSettings               # 9:16 crop mode, H/V offsets (-1..1), output resolution (1080×1920)
+│   ├── CropSettings               # 9:16 crop mode, H/V offsets (-1..1), output resolution (1080x1920)
 │   ├── TrimSettings               # Trim in/out times, clamping, validation, duration
 │   ├── SubtitleStyle              # Per-language fonts/sizes/colors (hex), outline, shadow, margins
 │   ├── MetadataOverlaySettings    # Title/artist text, fonts, colors, background box, position/padding
-│   └── AlignmentQualityMode       # Fast/Balanced/Accurate/Maximum with tuned parameters per mode
+│   └── AlignmentQualityMode       # Recommended (production) + 3 experimental modes with parameters
 ├── Services/
-│   ├── AudioExtractionService     # FFmpeg → 16kHz mono PCM WAV
-│   ├── WhisperAlignmentService    # Legacy: whisper-cpp transcription + position-aware beam DP (830 lines)
-│   ├── AdvancedAlignmentService   # Advanced: Python subprocess integration, JSON I/O, debug reporting
+│   ├── AudioExtractionService     # FFmpeg -> 16kHz mono PCM WAV
+│   ├── WhisperAlignmentService    # Production: whisper-cpp + beam DP + drift detection + boundary snap
+│   ├── AdvancedAlignmentService   # Experimental: Python subprocess integration, JSON I/O, debug reporting
 │   ├── LyricsParserService        # Block-format bilingual parser (Japanese line, Korean line, blank)
-│   ├── ExportService              # Two-stage: FFmpeg trim+crop → AVFoundation frame-by-frame burn-in
+│   ├── ExportService              # Two-stage: FFmpeg trim+crop -> AVFoundation frame-by-frame burn-in
 │   ├── SubtitleRenderService      # ASS subtitle file generation with per-language styles
 │   ├── VideoService               # AVFoundation metadata extraction (handles rotated videos)
 │   └── ProjectPersistenceService  # JSON save/load (.mreels), backward-compatible Decodable
@@ -287,31 +284,31 @@ MusicReelsGenerator/
 │   ├── ContentView                # 3-panel HSplitView (lyrics | preview | inspector)
 │   ├── LyricsPanelView            # Block list with confidence badges (green/orange/red/blue), lyrics input
 │   ├── VideoPreviewView           # AVPlayerLayer + crop offset + metadata overlay + subtitle overlay
-│   ├── PlaybackControlsView       # Scrubber with trim indicator, play/pause, ±1s/±5s, set timing
+│   ├── PlaybackControlsView       # Scrubber with trim indicator, play/pause, +-1s/+-5s, set timing
 │   ├── InspectorPanelView         # 6 tabs: Block / Trim / Crop / Style / Overlay / Info
 │   ├── ToolbarView                # Import, mode picker, Align, status badges, Export, Open, Save
 │   └── StatusBarView              # Export progress bar, status message, dirty indicator
 ├── Utilities/
 │   ├── SubtitleRenderer           # Shared Core Graphics renderer: renderBlock + renderMetadataOverlay
-│   ├── ProcessRunner              # Async Process wrapper, findFFmpeg/findWhisper/findPython
-│   ├── JapaneseTextNormalizer     # Katakana→hiragana, Levenshtein distance, LCS similarity
-│   ├── TrimTimingUtility          # Source-absolute → trim-relative time conversion + block filtering
+│   ├── ProcessRunner              # Async Process wrapper, deadlock-free pipe draining, streaming stderr
+│   ├── JapaneseTextNormalizer     # Katakana->hiragana, Levenshtein distance, LCS similarity
+│   ├── TrimTimingUtility          # Source-absolute -> trim-relative time conversion + block filtering
 │   ├── TimeFormatter              # M:SS.CS, M:SS, H:MM:SS.CS (ASS) formats
 │   ├── FontUtility                # System font enumeration, JP/KR recommended font lists
-│   └── ColorExtension             # Hex (#RRGGBB) ↔ SwiftUI Color conversion
+│   └── ColorExtension             # Hex (#RRGGBB) <-> SwiftUI Color conversion
 └── Resources/                     # Info.plist, entitlements
 
 Scripts/
-├── alignment_pipeline.py          # Python forced alignment: G2P, DTW, chunking, DP, collapse recovery
+├── alignment_pipeline.py          # Experimental Python alignment: G2P, DTW, chunking, DP, collapse recovery
 ├── requirements.txt               # Python dependencies (openai-whisper, pykakasi, numpy)
-└── setup_alignment.sh             # One-command setup for advanced pipeline
+└── setup_alignment.sh             # One-command setup for experimental pipeline
 ```
 
 ## How Alignment Works
 
-### Legacy Pipeline (Fast Mode)
+### Production Pipeline (Recommended Mode)
 
-The Fast mode uses whisper-cpp for segment-level alignment:
+The production alignment engine uses whisper-cpp for segment-level alignment with drift detection and boundary snap:
 
 1. **Transcription** — whisper-cpp transcribes audio into sentence-level segments (~20–30 per song) with start/end timestamps via `--output-csv`
 
@@ -319,63 +316,41 @@ The Fast mode uses whisper-cpp for segment-level alignment:
 
 3. **Vocal Onset Detection** — The first whisper segment's start time establishes the vocal onset boundary, preventing intro regions from attracting lyrics
 
-4. **Position-Aware Candidate Generation** — For each lyric block, candidates are generated from segments within a temporal search window around the expected position. Text similarity is scored via Levenshtein distance and LCS containment. Position is scored via Gaussian falloff from expected time. Combined score = textScore × (1 - positionWeight) + positionScore × positionWeight
+4. **Position-Aware Candidate Generation** — For each lyric block, candidates are generated from segments within a 30s temporal search window around the expected position. Text similarity is scored via Levenshtein distance and LCS containment. Position is scored via Gaussian falloff from expected time. Combined score = textScore x 0.65 + positionScore x 0.35
 
-5. **Monotonic Beam-Search DP** — Forward beam search finds the globally optimal assignment of segments to blocks under strict monotonic constraint (segment indices must increase). Each block can be matched or skipped. Temporal continuity bonuses reward reasonable time gaps between consecutive matches
+5. **Monotonic Beam-Search DP** — Forward beam search (width 80) finds the globally optimal assignment of segments to blocks under strict monotonic constraint (segment indices must increase). Each block can be matched or skipped. Temporal continuity bonuses reward reasonable time gaps between consecutive matches
 
-6. **Multi-Pass Refinement** — After the initial DP pass, low-confidence regions between anchors are re-aligned locally with tighter constraints and lower match thresholds
+6. **Multi-Pass Refinement** — After the initial DP pass, low-confidence regions between anchors are re-aligned locally with tighter constraints and lower match thresholds (2 refinement passes)
 
-7. **Anchor-Based Proportional Interpolation** — Unmatched blocks between anchors receive timing proportional to their Japanese text character count. Uses vocal onset (not 0:00) as the earliest valid start boundary
+7. **Drift Detection & Correction** — Scans for runs of 3+ consecutive weak blocks with consistent positional offset (>2s in the same direction). Detected drift regions are re-anchored against local segments, with results applied only if confidence improves
 
-### Advanced Pipeline (Balanced / Accurate / Maximum)
+8. **Anchor-Based Proportional Interpolation** — Unmatched blocks between anchors receive timing proportional to their Japanese text character count. Uses vocal onset (not 0:00) as the earliest valid start boundary
 
-The advanced pipeline uses character-level forced alignment via a Python subprocess (`Scripts/alignment_pipeline.py`):
+9. **Boundary Snap** — Snaps block start/end times to the nearest whisper segment edge within 0.3s, aligning subtitle timing to actual speech onset/offset without changing which segment was matched
 
-1. **Word-Level Transcription** — openai-whisper (Python) transcribes with `word_timestamps=True`, producing per-word timing via cross-attention weights. Parameters tuned for singing: `no_speech_threshold=0.3`, `compression_ratio_threshold=2.4`, `initial_prompt="日本語の歌詞。"`. Yields ~200–500 words per song (~10–25× more data points than segment-level)
+### Experimental Pipelines (Exp: Segment / Refined / Hybrid)
 
-2. **Optional Vocal Separation** — In Accurate/Maximum modes, demucs (`--two-stems vocals`) separates vocals from accompaniment before transcription. Falls back gracefully if demucs is unavailable
+Three experimental Python-based pipelines are available via `Scripts/alignment_pipeline.py` for A/B comparison. These are **not recommended for production** as they consistently underperform the production pipeline on singing audio.
 
-3. **Japanese G2P** — Lyrics are converted to hiragana:
-   - pykakasi converts kanji → kana (e.g., 時を越えて → ときをこえて)
-   - Katakana → hiragana via Unicode scalar offset (U+30A1–U+30F6 → U+3041–U+3096)
-   - Punctuation, prolonged sound marks, full-width characters removed
-   - Falls back to character-level matching if pykakasi unavailable
+**Exp: Segment** — Groups openai-whisper word-level timestamps into pseudo-segments, then applies position-aware Levenshtein matching (mirrors the production algorithm but using Python whisper instead of whisper-cpp)
 
-4. **Character-Level Expansion** — Each whisper word's timing is distributed proportionally across its kana characters. A word "ときを" spanning 1.0–1.5s becomes: と(1.0–1.17), き(1.17–1.33), を(1.33–1.5)
+**Exp: Refined** — Runs the segment baseline, then applies gated local DTW refinement. Refinement proposals must pass 7 validation gates before overwriting baseline results:
+- Maximum start shift (0.40s) and end shift (0.60s)
+- Minimum confidence gain (0.10)
+- Duration sanity (0.2s–20s)
+- Monotonic temporal ordering
+- Maximum gap between adjacent blocks
+- No regression in already-high-confidence blocks
 
-5. **Full-Song Banded DTW** — The whisper character stream is aligned to the concatenated lyrics character stream using banded DTW with asymmetric costs:
-   - Match: 0.0, Mismatch: 1.0
-   - Delete (skip whisper char): 0.5 (whisper may have extra content)
-   - Insert (skip lyric char): 1.2 (missing lyric characters are penalized more)
-   - Band constraint: Sakoe-Chiba band limits search to O(n × band) instead of O(n × m)
-   - Auto-widening: if band is too narrow to reach (n,m), band ratio doubles and retries
-
-6. **VAD-Based Chunking** — Audio RMS energy is computed in 25ms frames with 10ms hop, smoothed with 500ms moving average. Local energy minima are identified as candidate chunk boundaries. Boundaries are selected to target chunk sizes (8–25s depending on mode) with 1s overlap. Chunk boundaries are independent of predicted lyric timestamps
-
-7. **Multi-Window Candidate Scoring** — Each chunk is scored against multiple candidate lyric windows (3–10 depending on mode) around the expected lyric cursor position. For each candidate: character-level DTW alignment, match ratio computation, position bonus, and per-line timing extraction
-
-8. **Global Monotonic DP** — Beam search DP across all chunks selects the globally optimal assignment of lyric windows to audio chunks:
-   - Monotonic constraint: lyric windows must progress forward (small overlap allowed for recovery)
-   - Scoring: alignment quality + continuity bonus (sequential progression) + temporal continuity - skip penalty - gap penalty
-   - Deduplication by lyric cursor position within beam
-
-9. **Baseline Merge** — Chunk-based results are merged with the full-song DTW baseline. Per-line, the higher-confidence result is kept
-
-10. **Collapse Detection** — Scans for degraded regions:
-    - 3+ consecutive lines with confidence below threshold (0.15–0.3 depending on mode)
-    - Lines with duration <0.2s or >20s
-    - Time gaps >10s between adjacent lines
-    - Time going backwards (start < previous start)
-
-11. **Recovery** — Collapsed regions are re-aligned with wider DTW band (2× normal) using words from the time range between surrounding anchors. Multiple recovery passes in higher modes
-
-12. **Line Reconstruction** — Final line start/end times = timestamp of first/last DTW-matched character belonging to each line. Confidence = weighted combination of exact match ratio (60%) and coverage ratio (40%)
-
-13. **Proportional Interpolation** — Remaining unmatched lines get timing distributed proportionally by kana character count between surrounding anchored lines
-
-14. **Ordering Fix** — Final pass corrects any temporal ordering violations (backward time jumps) by adjusting the lower-confidence line
-
-15. **Debug Reporting** — Per-region metrics (0–10%, 10–20%, ... 90–100%): mean confidence, anchor count, forced/recovered/interpolated/unmatched counts, collapse count. Full chunk report with chosen windows and alignment scores
+**Exp: Hybrid** — Ungated character-level DTW alignment with VAD-based chunking, multi-window candidate scoring, and global monotonic DP. Includes collapse detection and recovery. Full pipeline details:
+1. Word-level transcription via openai-whisper (`word_timestamps=True`)
+2. Japanese G2P via pykakasi (kanji->kana, katakana->hiragana)
+3. Character-level expansion (word timing distributed across kana characters)
+4. Full-song banded DTW with asymmetric costs
+5. VAD-based audio chunking at energy minima
+6. Per-chunk DTW alignment against multiple candidate lyric windows
+7. Global monotonic DP path selection
+8. Collapse detection and re-anchoring with wider search
 
 ## How Export Works
 
@@ -384,7 +359,7 @@ The export pipeline uses a two-stage approach because Homebrew's FFmpeg lacks li
 **Stage 1: FFmpeg Trim + Crop + Scale**
 - Seeks to trim start (`-ss`) and limits duration (`-t`)
 - Computes cover-mode scale factor: `max(targetW/srcW, targetH/srcH)`
-- Scales and crops to 1080×1920 with user-defined H/V offset
+- Scales and crops to 1080x1920 with user-defined H/V offset
 - Encodes H.264 (CRF 18, fast preset) with AAC audio (192k)
 - Dimensions rounded up to even numbers (H.264 requirement)
 - Output: intermediate cropped MP4
@@ -403,11 +378,11 @@ The export pipeline uses a two-stage approach because Homebrew's FFmpeg lacks li
 
 Both preview and export use the same `SubtitleRenderer` — a shared Core Graphics rendering engine:
 
-1. `SubtitleRenderer.renderBlock()` renders subtitle text at the canonical 1080×1920 export canvas
+1. `SubtitleRenderer.renderBlock()` renders subtitle text at the canonical 1080x1920 export canvas
 2. `SubtitleRenderer.renderMetadataOverlay()` renders the title/artist overlay with dark rounded background box at the same canvas
 3. Font resolution uses `NSFontDescriptor` with `.family` attribute (not `NSFont(name:)` which requires PostScript names)
 4. Japanese subtitle font gets bold trait via `NSFontManager.shared.convert(toHaveTrait: .boldFontMask)`
-5. Multi-pass subtitle rendering: outline (offset grid from -outlineR to +outlineR) → shadow (offset 2, -2) → fill
+5. Multi-pass subtitle rendering: outline (offset grid from -outlineR to +outlineR) -> shadow (offset 2, -2) -> fill
 6. Text layout: Korean at bottom margin, Japanese above with configurable line spacing gap
 7. Preview displays the resulting CGImages scaled down to fit the preview container via `resizable(interpolation: .high)`
 8. Export composites the same CGImages at full resolution onto video frames via CGContext drawing
@@ -434,7 +409,7 @@ Backward compatibility: older project files without `trimSettings`, `isAnchor`, 
 - Line-level subtitle output (character-level alignment is internal; no word-level karaoke display)
 - Whisper alignment quality depends on audio clarity and vocal/accompaniment separation
 - Frame-by-frame export is CPU-intensive (processes each video frame individually)
-- Advanced pipeline requires Python 3 + ~2 GB of pip packages (torch, whisper)
+- Experimental pipeline requires Python 3 + ~2 GB of pip packages (torch, whisper)
 - Whisper models are downloaded on first use (~1.5 GB for medium, ~3 GB for large-v3)
 - No cloud sync or multi-device support
 - Development build only (not packaged for App Store, no app sandbox)

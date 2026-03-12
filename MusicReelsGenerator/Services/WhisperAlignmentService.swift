@@ -183,7 +183,7 @@ enum WhisperAlignmentService {
     static func align(
         segments: [WhisperSegment],
         to blocks: [LyricBlock],
-        mode: AlignmentQualityMode = .balanced,
+        mode: AlignmentQualityMode = .legacy,
         onProgress: ((String) -> Void)? = nil
     ) -> [LyricBlock] {
         guard !segments.isEmpty, !blocks.isEmpty else { return blocks }
@@ -218,8 +218,23 @@ enum WhisperAlignmentService {
             )
         }
 
+        // === Pass 3: Drift detection & local re-anchor ===
+        let driftResult = detectAndCorrectDrift(
+            blocks: &alignedBlocks,
+            segments: segments,
+            totalDuration: totalDuration,
+            vocalOnset: vocalOnset,
+            mode: mode
+        )
+        if driftResult.driftDetected {
+            onProgress?("Drift detected: corrected \(driftResult.correctedCount) blocks")
+        }
+
         // === Final: Anchor-based interpolation for remaining unmatched blocks ===
         interpolateFromAnchors(&alignedBlocks, totalDuration: totalDuration, vocalOnset: vocalOnset)
+
+        // === Post-processing: Snap boundaries to segment edges ===
+        snapBoundariesToSegments(&alignedBlocks, segments: segments)
 
         // === Debug: warn if first lyric is suspiciously early ===
         if let firstStart = alignedBlocks.first?.startTime, firstStart < vocalOnset - 1 {
@@ -725,6 +740,215 @@ enum WhisperAlignmentService {
 
             i = runEnd
         }
+    }
+
+    // MARK: - Drift Detection & Correction
+
+    private struct DriftResult {
+        let driftDetected: Bool
+        let correctedCount: Int
+    }
+
+    /// Detect systematic timing drift in aligned blocks and attempt local re-anchor.
+    ///
+    /// Drift occurs when a run of blocks all shifted in the same direction relative
+    /// to their expected positions (e.g., chorus confusion pulling blocks early/late).
+    /// We detect this by checking if consecutive low-confidence blocks have consistent
+    /// offset from expected position, then re-align the suspicious region.
+    private static func detectAndCorrectDrift(
+        blocks: inout [LyricBlock],
+        segments: [WhisperSegment],
+        totalDuration: Double,
+        vocalOnset: Double,
+        mode: AlignmentQualityMode
+    ) -> DriftResult {
+        let B = blocks.count
+        guard B >= 4 else { return DriftResult(driftDetected: false, correctedCount: 0) }
+
+        var correctedCount = 0
+
+        // Scan for runs of weak blocks that might be drifted
+        var i = 0
+        while i < B {
+            let block = blocks[i]
+            // Skip anchors and manually adjusted blocks
+            if block.isAnchor || block.isManuallyAdjusted || (block.confidence ?? 0) >= 0.5 {
+                i += 1
+                continue
+            }
+
+            // Find extent of weak region
+            var regionEnd = i + 1
+            while regionEnd < B {
+                let b = blocks[regionEnd]
+                if b.isAnchor || b.isManuallyAdjusted || (b.confidence ?? 0) >= 0.5 {
+                    break
+                }
+                regionEnd += 1
+            }
+
+            let regionLength = regionEnd - i
+
+            // Only investigate regions of 3+ consecutive weak blocks
+            if regionLength >= 3, let driftDirection = detectDriftDirection(
+                blocks: blocks, range: i..<regionEnd,
+                totalBlocks: B, totalDuration: totalDuration, vocalOnset: vocalOnset
+            ) {
+                print("[Alignment] Drift detected in blocks \(i)–\(regionEnd - 1): \(String(format: "%.1f", driftDirection))s systematic shift")
+
+                // Re-anchor: determine correct time bounds from surrounding anchors
+                let timeBefore: Double
+                if i > 0, let end = blocks[i - 1].endTime {
+                    timeBefore = end
+                } else {
+                    timeBefore = vocalOnset
+                }
+
+                let timeAfter: Double
+                if regionEnd < B, let start = blocks[regionEnd].startTime {
+                    timeAfter = start
+                } else {
+                    timeAfter = totalDuration
+                }
+
+                // Find segments in the corrected time range
+                let regionSegments = segments.filter { seg in
+                    seg.startTime >= timeBefore - 1 && seg.endTime <= timeAfter + 1
+                }
+
+                if !regionSegments.isEmpty {
+                    let regionBlocks = Array(blocks[i..<regionEnd])
+                    let regionDuration = timeAfter - timeBefore
+
+                    let localAligned = alignRegion(
+                        segments: regionSegments,
+                        blocks: regionBlocks,
+                        regionStart: timeBefore,
+                        regionEnd: timeAfter,
+                        regionDuration: regionDuration,
+                        mode: mode
+                    )
+
+                    // Apply only if improvement
+                    for j in 0..<regionLength {
+                        let localBlock = localAligned[j]
+                        let oldConf = blocks[i + j].confidence ?? 0
+                        let newConf = localBlock.confidence ?? 0
+                        if localBlock.startTime != nil && newConf > oldConf {
+                            blocks[i + j] = localBlock
+                            correctedCount += 1
+                        }
+                    }
+                }
+            }
+
+            i = regionEnd
+        }
+
+        return DriftResult(driftDetected: correctedCount > 0, correctedCount: correctedCount)
+    }
+
+    /// Check if a run of blocks has systematic drift (all shifted in same direction).
+    /// Returns the average drift in seconds, or nil if no consistent drift detected.
+    private static func detectDriftDirection(
+        blocks: [LyricBlock],
+        range: Range<Int>,
+        totalBlocks: Int,
+        totalDuration: Double,
+        vocalOnset: Double
+    ) -> Double? {
+        var drifts: [Double] = []
+
+        for i in range {
+            guard let startTime = blocks[i].startTime else { continue }
+
+            let expected = estimateExpectedTime(
+                blockIndex: i, totalBlocks: totalBlocks, totalDuration: totalDuration,
+                vocalOnset: vocalOnset, existingBlocks: blocks
+            )
+            drifts.append(startTime - expected)
+        }
+
+        guard drifts.count >= 2 else { return nil }
+
+        let meanDrift = drifts.reduce(0, +) / Double(drifts.count)
+
+        // Check if drift is consistent (all in same direction, magnitude > 2s)
+        let allSameDirection = drifts.allSatisfy { ($0 > 0) == (meanDrift > 0) }
+        let significantDrift = abs(meanDrift) > 2.0
+
+        if allSameDirection && significantDrift {
+            return meanDrift
+        }
+        return nil
+    }
+
+    // MARK: - Boundary Snap
+
+    /// Snap block boundaries to nearest whisper segment edges.
+    /// This is a safe post-processing step that aligns start/end times
+    /// to actual speech onset/offset detected by whisper, improving
+    /// subtitle timing without changing which segment was matched.
+    private static func snapBoundariesToSegments(
+        _ blocks: inout [LyricBlock],
+        segments: [WhisperSegment],
+        snapThreshold: Double = 0.3
+    ) {
+        guard !segments.isEmpty else { return }
+
+        // Build sorted arrays of segment start and end times for binary search
+        let segStarts = segments.map(\.startTime).sorted()
+        let segEnds = segments.map(\.endTime).sorted()
+
+        for i in 0..<blocks.count {
+            guard !blocks[i].isManuallyAdjusted else { continue }
+            guard blocks[i].startTime != nil else { continue }
+
+            // Snap start time to nearest segment start
+            if let start = blocks[i].startTime,
+               let nearest = findNearest(in: segStarts, to: start) {
+                let delta = abs(nearest - start)
+                if delta > 0.01 && delta <= snapThreshold {
+                    blocks[i].startTime = nearest
+                }
+            }
+
+            // Snap end time to nearest segment end
+            if let end = blocks[i].endTime,
+               let nearest = findNearest(in: segEnds, to: end) {
+                let delta = abs(nearest - end)
+                if delta > 0.01 && delta <= snapThreshold {
+                    blocks[i].endTime = nearest
+                }
+            }
+
+            // Ensure start < end after snapping
+            if let s = blocks[i].startTime, let e = blocks[i].endTime, s >= e {
+                blocks[i].endTime = s + 0.1
+            }
+        }
+    }
+
+    /// Find the nearest value in a sorted array using binary search.
+    private static func findNearest(in sorted: [Double], to target: Double) -> Double? {
+        guard !sorted.isEmpty else { return nil }
+
+        var lo = 0, hi = sorted.count - 1
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if sorted[mid] < target {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+
+        // Check lo and lo-1 for the closest
+        var best = sorted[lo]
+        if lo > 0 && abs(sorted[lo - 1] - target) < abs(best - target) {
+            best = sorted[lo - 1]
+        }
+        return best
     }
 
     // MARK: - Debug Report

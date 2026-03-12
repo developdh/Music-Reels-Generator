@@ -20,13 +20,13 @@ struct ToolbarView: View {
                 ForEach(AlignmentQualityMode.allCases) { mode in
                     HStack {
                         Text(mode.rawValue)
-                        if mode.usesAdvancedPipeline && !vm.advancedPipelineAvailable {
+                        if mode.isExperimental && !vm.advancedPipelineAvailable {
                             Text("*").foregroundColor(.orange)
                         }
                     }.tag(mode)
                 }
             }
-            .frame(width: 100)
+            .frame(width: 140)
             .help(alignmentPickerHelp)
 
             // Alignment
@@ -43,7 +43,8 @@ struct ToolbarView: View {
                 }
             }
             .disabled(!vm.project.hasVideo || !vm.project.hasLyrics || vm.isAligning
-                      || (!vm.whisperAvailable && !vm.advancedPipelineAvailable))
+                      || (vm.alignmentQualityMode.usesLegacyPipeline && !vm.whisperAvailable)
+                      || (vm.alignmentQualityMode.usesAdvancedPipeline && !vm.advancedPipelineAvailable))
 
             if vm.isAligning {
                 Text(vm.alignmentProgress)
@@ -57,7 +58,7 @@ struct ToolbarView: View {
             HStack(spacing: 8) {
                 ToolStatusBadge(name: "FFmpeg", available: vm.ffmpegAvailable)
                 ToolStatusBadge(name: "Whisper", available: vm.whisperAvailable)
-                ToolStatusBadge(name: "Advanced", available: vm.advancedPipelineAvailable)
+                ToolStatusBadge(name: "Python (Exp)", available: vm.advancedPipelineAvailable)
             }
 
             Divider().frame(height: 20)
@@ -122,8 +123,8 @@ struct ToolbarView: View {
     }
 
     private var alignmentPickerHelp: String {
-        if vm.alignmentQualityMode.usesAdvancedPipeline && !vm.advancedPipelineAvailable {
-            return "Advanced pipeline not available. Run: cd Scripts && ./setup_alignment.sh"
+        if vm.alignmentQualityMode.isExperimental && !vm.advancedPipelineAvailable {
+            return "Experimental pipeline not available. Run: cd Scripts && ./setup_alignment.sh"
         }
         return vm.alignmentQualityMode.description
     }

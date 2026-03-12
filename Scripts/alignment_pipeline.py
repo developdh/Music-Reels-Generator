@@ -144,63 +144,102 @@ class CandidateWindow:
 # Mode configuration
 # ============================================================
 
+# Shared segment-match baseline config
+_BASELINE_COMMON = {
+    'use_vocal_separation': False,
+    'use_stem_for_alignment': False,
+    'chunk_target_seconds': 15,
+    'chunk_min_seconds': 8,
+    'chunk_max_seconds': 25,
+    'beam_width': 80,
+    'max_candidate_windows': 5,
+    'window_overlap_lines': 3,
+    'enable_collapse_detection': True,
+    'dtw_band_ratio': 0.25,
+    'whisper_model': 'medium',
+    'collapse_threshold': 0.2,
+    'recovery_passes': 1,
+    'search_window_seconds': 30,
+    'match_threshold': 0.25,
+    'max_combine_segments': 3,
+    'position_weight': 0.35,
+}
+
 MODE_CONFIG = {
-    'fast': {
-        'use_vocal_separation': False,
-        'chunk_target_seconds': 20,
-        'chunk_min_seconds': 10,
-        'chunk_max_seconds': 35,
-        'beam_width': 30,
-        'max_candidate_windows': 3,
-        'window_overlap_lines': 2,
-        'enable_collapse_detection': False,
-        'dtw_band_ratio': 0.3,
-        'whisper_model': 'base',
-        'collapse_threshold': 0.15,
-        'recovery_passes': 0,
+    # ── Baseline ─────────────────────────────────────────────────
+    # Segment-level Levenshtein matching only.  No DTW refinement.
+    # This is the trustworthy source of truth.
+    'baseline': {
+        **_BASELINE_COMMON,
+        'strategy': 'segment_match',
     },
-    'balanced': {
+    # ── Refined ──────────────────────────────────────────────────
+    # Baseline + strictly-gated local DTW boundary refinement.
+    # Baseline timings are preserved; DTW may only nudge boundaries
+    # within tight limits and only if all validation gates pass.
+    'refined': {
+        **_BASELINE_COMMON,
+        'strategy': 'baseline_plus_gated_refinement',
+        'whisper_model': 'medium',
+        'dtw_band_ratio': 0.2,
+        # Gating limits
+        'max_start_shift': 0.40,   # seconds
+        'max_end_shift': 0.60,     # seconds
+        'min_confidence_gain': 0.10,  # refined must beat baseline by this
+        'min_line_duration': 0.3,  # seconds
+        'max_line_duration': 25.0, # seconds
+        'max_gap_created': 5.0,    # seconds gap between adjacent lines
+        'local_dtw_max_region': 5,
+    },
+    # ── Experimental ─────────────────────────────────────────────
+    # Full pipeline without gating. Kept ONLY for A/B comparison.
+    # Clearly marked as experimental — may produce worse results.
+    'experimental': {
+        'strategy': 'hybrid',
         'use_vocal_separation': False,
+        'use_stem_for_alignment': False,
         'chunk_target_seconds': 15,
         'chunk_min_seconds': 8,
         'chunk_max_seconds': 25,
-        'beam_width': 80,
+        'beam_width': 200,
         'max_candidate_windows': 5,
         'window_overlap_lines': 3,
         'enable_collapse_detection': True,
-        'dtw_band_ratio': 0.25,
-        'whisper_model': 'medium',
-        'collapse_threshold': 0.2,
-        'recovery_passes': 1,
-    },
-    'accurate': {
-        'use_vocal_separation': True,
-        'chunk_target_seconds': 12,
-        'chunk_min_seconds': 8,
-        'chunk_max_seconds': 20,
-        'beam_width': 200,
-        'max_candidate_windows': 7,
-        'window_overlap_lines': 4,
-        'enable_collapse_detection': True,
         'dtw_band_ratio': 0.2,
-        'whisper_model': 'large-v3',
+        'whisper_model': 'medium',
         'collapse_threshold': 0.25,
         'recovery_passes': 2,
+        'search_window_seconds': 40,
+        'match_threshold': 0.20,
+        'max_combine_segments': 4,
+        'position_weight': 0.4,
+        'local_dtw_max_region': 5,
     },
-    'maximum': {
-        'use_vocal_separation': True,
-        'chunk_target_seconds': 10,
-        'chunk_min_seconds': 8,
-        'chunk_max_seconds': 20,
-        'beam_width': 500,
-        'max_candidate_windows': 10,
-        'window_overlap_lines': 5,
-        'enable_collapse_detection': True,
-        'dtw_band_ratio': 0.15,
-        'whisper_model': 'large-v3',
-        'collapse_threshold': 0.3,
-        'recovery_passes': 3,
-    },
+    # ── Aliases for backward compatibility ────────────────────────
+    'fast':        {**_BASELINE_COMMON, 'strategy': 'segment_match',
+                    'whisper_model': 'base', 'beam_width': 30,
+                    'search_window_seconds': 20, 'match_threshold': 0.30,
+                    'max_combine_segments': 2, 'enable_collapse_detection': False},
+    'balanced':    {**_BASELINE_COMMON, 'strategy': 'segment_match'},
+    'legacy_plus': {**_BASELINE_COMMON, 'strategy': 'segment_match'},
+    'hybrid':      {**_BASELINE_COMMON, 'strategy': 'baseline_plus_gated_refinement',
+                    'whisper_model': 'medium', 'dtw_band_ratio': 0.2,
+                    'max_start_shift': 0.40, 'max_end_shift': 0.60,
+                    'min_confidence_gain': 0.10, 'min_line_duration': 0.3,
+                    'max_line_duration': 25.0, 'max_gap_created': 5.0,
+                    'local_dtw_max_region': 5},
+    'accurate':    {**_BASELINE_COMMON, 'strategy': 'baseline_plus_gated_refinement',
+                    'whisper_model': 'medium', 'dtw_band_ratio': 0.2,
+                    'max_start_shift': 0.40, 'max_end_shift': 0.60,
+                    'min_confidence_gain': 0.10, 'min_line_duration': 0.3,
+                    'max_line_duration': 25.0, 'max_gap_created': 5.0,
+                    'local_dtw_max_region': 5},
+    'maximum':     {**_BASELINE_COMMON, 'strategy': 'baseline_plus_gated_refinement',
+                    'whisper_model': 'medium', 'dtw_band_ratio': 0.2,
+                    'max_start_shift': 0.40, 'max_end_shift': 0.60,
+                    'min_confidence_gain': 0.10, 'min_line_duration': 0.3,
+                    'max_line_duration': 25.0, 'max_gap_created': 5.0,
+                    'local_dtw_max_region': 5},
 }
 
 
@@ -268,6 +307,659 @@ def text_to_kana(text):
     kana = kanji_to_kana(text)
     # Then normalize (remove punctuation, katakana->hiragana)
     return normalize_japanese(kana)
+
+
+# ============================================================
+# Levenshtein similarity (mirrors old Swift pipeline)
+# ============================================================
+
+def levenshtein_similarity(s1, s2):
+    """Normalized Levenshtein similarity (0.0 to 1.0)."""
+    if not s1 and not s2:
+        return 1.0
+    if not s1 or not s2:
+        return 0.0
+    n, m = len(s1), len(s2)
+    dp = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n + 1):
+        dp[i][0] = i
+    for j in range(m + 1):
+        dp[0][j] = j
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = 0 if s1[i - 1] == s2[j - 1] else 1
+            dp[i][j] = min(dp[i - 1][j] + 1, dp[i][j - 1] + 1,
+                           dp[i - 1][j - 1] + cost)
+    max_len = max(n, m)
+    return 1.0 - dp[n][m] / max_len
+
+
+# ============================================================
+# Word grouping into pseudo-segments
+# ============================================================
+
+@dataclass
+class PseudoSegment:
+    start: float
+    end: float
+    text: str
+    kana: str
+    word_indices: List[int] = field(default_factory=list)
+
+
+def group_words_to_segments(words, max_gap=0.5, max_duration=8.0):
+    """
+    Group consecutive words into pseudo-segments based on time gaps.
+    This creates segment-level units similar to whisper-cpp output
+    but from openai-whisper word-level data.
+    """
+    if not words:
+        return []
+    segments = []
+    current_indices = [0]
+
+    for wi in range(1, len(words)):
+        gap = words[wi].start - words[current_indices[-1]].end
+        duration = words[wi].end - words[current_indices[0]].start
+
+        if gap > max_gap or duration > max_duration:
+            seg = _make_pseudo_segment(words, current_indices)
+            segments.append(seg)
+            current_indices = [wi]
+        else:
+            current_indices.append(wi)
+
+    if current_indices:
+        seg = _make_pseudo_segment(words, current_indices)
+        segments.append(seg)
+
+    return segments
+
+
+def _make_pseudo_segment(words, indices):
+    text = ''.join(words[i].text for i in indices)
+    kana = ''.join(words[i].kana for i in indices)
+    return PseudoSegment(
+        start=words[indices[0]].start,
+        end=words[indices[-1]].end,
+        text=text,
+        kana=kana,
+        word_indices=list(indices),
+    )
+
+
+# ============================================================
+# Position scoring (mirrors old Swift pipeline's Gaussian falloff)
+# ============================================================
+
+def position_score_gaussian(candidate_time, expected_time, window_radius):
+    """Score how plausible a candidate's time is. 0.0 to 1.0 via Gaussian."""
+    distance = abs(candidate_time - expected_time)
+    sigma = window_radius / 2.5
+    if sigma <= 0:
+        return 1.0 if distance < 0.1 else 0.0
+    return math.exp(-(distance ** 2) / (2 * sigma ** 2))
+
+
+def estimate_expected_time(block_index, total_blocks, total_duration, vocal_onset,
+                           anchors=None):
+    """
+    Estimate where a lyric line should appear in the timeline.
+    Uses surrounding anchors if available, otherwise linear distribution
+    from vocal_onset to total_duration.
+    """
+    if anchors:
+        # Find nearest anchors before and after
+        prev_idx, prev_time = None, None
+        next_idx, next_time = None, None
+        for idx, t in anchors:
+            if idx < block_index:
+                prev_idx, prev_time = idx, t
+            elif idx > block_index and next_idx is None:
+                next_idx, next_time = idx, t
+                break
+
+        if prev_idx is not None and next_idx is not None:
+            frac = (block_index - prev_idx) / (next_idx - prev_idx)
+            return prev_time + frac * (next_time - prev_time)
+        if prev_idx is not None:
+            remaining = total_blocks - prev_idx
+            time_remaining = total_duration - prev_time
+            frac = (block_index - prev_idx) / max(remaining, 1)
+            return prev_time + frac * time_remaining
+        if next_idx is not None:
+            frac = block_index / max(next_idx, 1)
+            return vocal_onset + frac * (next_time - vocal_onset)
+
+    # Default: linear distribution from vocal onset
+    lyric_duration = total_duration - vocal_onset
+    return vocal_onset + (block_index + 0.5) / max(total_blocks, 1) * lyric_duration
+
+
+# ============================================================
+# Segment-match alignment (position-aware Levenshtein DP)
+# ============================================================
+
+def segment_match_alignment(
+    segments, lyrics, total_duration, vocal_onset,
+    beam_width=80, search_window_seconds=30,
+    match_threshold=0.25, max_combine=3,
+    position_weight=0.35, refinement_passes=2,
+):
+    """
+    Position-aware segment matching using Levenshtein similarity.
+    This mirrors the old Swift WhisperAlignmentService pipeline but
+    runs on openai-whisper word-grouped pseudo-segments.
+
+    Returns: List[AlignedLine]
+    """
+    B = len(lyrics)
+    S = len(segments)
+    if not segments or not lyrics:
+        return [AlignedLine(i, 0, 0, 0, False, 'unmatched') for i in range(B)]
+
+    progress(f"Segment-match alignment: {S} segments → {B} lines")
+
+    # === Pass 1: Position-aware DP ===
+    aligned = _segment_dp_pass(
+        segments, lyrics, total_duration, vocal_onset,
+        beam_width, search_window_seconds, match_threshold,
+        max_combine, position_weight, anchors=None,
+    )
+
+    # === Refinement passes ===
+    for pass_num in range(2, refinement_passes + 1):
+        # Build anchor list from high-confidence results
+        anchors = [(al.index, al.start_time) for al in aligned
+                   if al.is_anchor and al.start_time > 0]
+
+        aligned = _refine_segment_match(
+            segments, lyrics, aligned, total_duration, vocal_onset,
+            beam_width, match_threshold, max_combine, position_weight,
+            anchors, pass_num,
+        )
+
+    return aligned
+
+
+def _segment_dp_pass(
+    segments, lyrics, total_duration, vocal_onset,
+    beam_width, search_window_seconds, match_threshold,
+    max_combine, position_weight, anchors,
+):
+    """Core position-aware DP for segment matching."""
+    B = len(lyrics)
+    S = len(segments)
+
+    # Build candidates for each lyric line
+    candidates = [[] for _ in range(B)]
+
+    for bi in range(B):
+        line_kana = lyrics[bi].kana
+        if not line_kana:
+            continue
+
+        expected_time = estimate_expected_time(
+            bi, B, total_duration, vocal_onset, anchors
+        )
+        win_start = max(0, expected_time - search_window_seconds)
+        win_end = min(total_duration, expected_time + search_window_seconds)
+
+        for si in range(S):
+            if segments[si].start < win_start - 5 or segments[si].start > win_end + 5:
+                continue
+
+            for span in range(1, min(max_combine + 1, S - si + 1)):
+                end_seg = si + span - 1
+                if end_seg >= S:
+                    break
+
+                combined_kana = ''.join(segments[k].kana for k in range(si, end_seg + 1))
+                text_score = levenshtein_similarity(line_kana, combined_kana)
+
+                if text_score >= match_threshold:
+                    seg_mid = (segments[si].start + segments[end_seg].end) / 2
+                    pos_score = position_score_gaussian(
+                        seg_mid, expected_time, search_window_seconds
+                    )
+                    combined_score = (text_score * (1 - position_weight)
+                                      + pos_score * position_weight)
+
+                    candidates[bi].append({
+                        'seg_start': si, 'seg_end': end_seg,
+                        'text_score': text_score,
+                        'position_score': pos_score,
+                        'combined_score': combined_score,
+                        'start_time': segments[si].start,
+                        'end_time': segments[end_seg].end,
+                    })
+
+        candidates[bi].sort(key=lambda c: c['combined_score'], reverse=True)
+        candidates[bi] = candidates[bi][:beam_width * 2]
+
+    # Monotonic DP beam search
+    @dataclass
+    class SMState:
+        score: float
+        last_seg_end: int
+        last_match_time: float
+        choices: list  # index into candidates[bi] or None
+
+    beam_states = [SMState(0.0, -1, 0.0, [])]
+
+    for bi in range(B):
+        next_beam = []
+        for state in beam_states:
+            # Skip this line
+            skip = SMState(state.score, state.last_seg_end, state.last_match_time,
+                           state.choices + [None])
+            next_beam.append(skip)
+
+            # Match with a candidate
+            for ci, cand in enumerate(candidates[bi]):
+                if cand['seg_start'] <= state.last_seg_end:
+                    continue
+
+                cont_bonus = 0.0
+                if state.last_match_time > 0:
+                    gap = cand['start_time'] - state.last_match_time
+                    if 0 <= gap < 30:
+                        cont_bonus = 0.05 * (1.0 - gap / 30.0)
+
+                matched = SMState(
+                    state.score + cand['combined_score'] + cont_bonus,
+                    cand['seg_end'],
+                    cand['end_time'],
+                    state.choices + [ci],
+                )
+                next_beam.append(matched)
+
+        next_beam.sort(key=lambda s: s.score, reverse=True)
+        beam_states = next_beam[:beam_width]
+
+    if not beam_states:
+        return [AlignedLine(i, 0, 0, 0, False, 'unmatched') for i in range(B)]
+
+    best = beam_states[0]
+
+    # Apply results
+    results = []
+    for bi in range(B):
+        choice_idx = best.choices[bi] if bi < len(best.choices) else None
+        if choice_idx is not None and choice_idx < len(candidates[bi]):
+            cand = candidates[bi][choice_idx]
+            conf = cand['text_score']
+            results.append(AlignedLine(
+                index=bi,
+                start_time=cand['start_time'],
+                end_time=cand['end_time'],
+                confidence=conf,
+                is_anchor=conf >= 0.6,
+                method='segment_match',
+            ))
+        else:
+            results.append(AlignedLine(bi, 0, 0, 0, False, 'unmatched'))
+
+    matched = sum(1 for r in results if r.confidence > 0)
+    anchors_found = sum(1 for r in results if r.is_anchor)
+    debug(f"Segment-match DP: {matched}/{B} matched, {anchors_found} anchors")
+    return results
+
+
+def _refine_segment_match(
+    segments, lyrics, aligned, total_duration, vocal_onset,
+    beam_width, match_threshold, max_combine, position_weight,
+    anchors, pass_num,
+):
+    """Refine low-confidence regions between anchors."""
+    result = list(aligned)
+    improved = 0
+    i = 0
+
+    while i < len(result):
+        if result[i].is_anchor or result[i].confidence >= 0.5:
+            i += 1
+            continue
+
+        # Find weak region extent
+        region_end = i + 1
+        while region_end < len(result):
+            if result[region_end].is_anchor or result[region_end].confidence >= 0.5:
+                break
+            region_end += 1
+
+        # Time bounds from surrounding anchors
+        time_before = vocal_onset
+        if i > 0 and result[i - 1].end_time > 0:
+            time_before = result[i - 1].end_time
+        time_after = total_duration
+        if region_end < len(result) and result[region_end].start_time > 0:
+            time_after = result[region_end].start_time
+
+        # Filter segments to this time range
+        region_segs = [s for s in segments
+                       if s.start >= time_before - 1 and s.end <= time_after + 1]
+
+        if region_segs:
+            region_lyrics = lyrics[i:region_end]
+            region_dur = time_after - time_before
+
+            local = _segment_dp_pass(
+                region_segs, region_lyrics, region_dur, time_before,
+                min(beam_width, 100), region_dur / 2, max(match_threshold - 0.05, 0.15),
+                max_combine, position_weight * 1.1, anchors,
+            )
+
+            for j, al in enumerate(local):
+                idx = i + j
+                if al.confidence > result[idx].confidence:
+                    result[idx] = AlignedLine(
+                        al.index, al.start_time, al.end_time,
+                        al.confidence, al.is_anchor,
+                        'refined',
+                    )
+                    improved += 1
+
+        i = region_end
+
+    if improved > 0:
+        debug(f"Refinement pass {pass_num}: improved {improved} lines")
+    return result
+
+
+# ============================================================
+# Local DTW refinement (for hybrid mode)
+# ============================================================
+
+def local_dtw_refinement(
+    aligned, words, lyrics, total_duration, vocal_onset,
+    band_ratio=0.2, max_region=5,
+):
+    """
+    Apply character-level DTW only to low-confidence regions.
+    High-confidence segment-match anchors are preserved.
+    This is the key hybrid innovation: ASR for anchors, DTW for local refinement.
+    """
+    result = list(aligned)
+    whisper_chars = expand_words_to_chars(words)
+    if not whisper_chars:
+        return result
+
+    improved = 0
+    i = 0
+    while i < len(result):
+        # Skip high-confidence lines
+        if result[i].confidence >= 0.5:
+            i += 1
+            continue
+
+        # Find weak region extent (bounded by max_region)
+        region_end = i + 1
+        while region_end < len(result) and region_end - i < max_region:
+            if result[region_end].is_anchor or result[region_end].confidence >= 0.6:
+                break
+            region_end += 1
+
+        if region_end - i < 1:
+            i += 1
+            continue
+
+        # Get time bounds from surrounding good lines
+        time_before = vocal_onset
+        for k in range(i - 1, -1, -1):
+            if result[k].end_time > 0 and result[k].confidence >= 0.3:
+                time_before = result[k].end_time
+                break
+        time_after = total_duration
+        for k in range(region_end, len(result)):
+            if result[k].start_time > 0 and result[k].confidence >= 0.3:
+                time_after = result[k].start_time
+                break
+
+        # Get chars in time range
+        region_chars = [c for c in whisper_chars
+                        if time_before - 0.5 <= c.start <= time_after + 0.5]
+        if not region_chars:
+            i = region_end
+            continue
+
+        # Build lyric kana for region
+        region_lyrics = lyrics[i:region_end]
+        region_kana = ''.join(l.kana for l in region_lyrics)
+        if not region_kana:
+            i = region_end
+            continue
+
+        # Build offsets
+        offsets = []
+        cursor = 0
+        for l in region_lyrics:
+            end = cursor + len(l.kana)
+            offsets.append((cursor, end))
+            cursor = end
+
+        # Local DTW
+        r_w_chars = [c.char for c in region_chars]
+        r_l_chars = list(region_kana)
+        cost, path = banded_dtw(r_w_chars, r_l_chars, band_ratio=min(band_ratio * 1.5, 0.5))
+
+        # Extract per-line timings
+        for li, line in enumerate(region_lyrics):
+            l_start, l_end = offsets[li]
+            matched_w = []
+            exact = 0
+            for wi, lci in path:
+                if l_start <= lci < l_end:
+                    matched_w.append(wi)
+                    if r_w_chars[wi] == r_l_chars[lci]:
+                        exact += 1
+
+            if matched_w:
+                first = min(matched_w)
+                last = max(matched_w)
+                st = region_chars[first].start
+                et = region_chars[last].end
+                conf = exact / max(l_end - l_start, 1)
+
+                idx = i + li
+                # Only update if DTW gives better confidence
+                if conf > result[idx].confidence:
+                    result[idx] = AlignedLine(
+                        line.index, st, et, min(conf, 1.0),
+                        conf >= 0.5, 'local_dtw',
+                    )
+                    improved += 1
+
+        i = region_end
+
+    debug(f"Local DTW refinement: improved {improved} lines")
+    return result
+
+
+# ============================================================
+# Refinement gating — baseline remains source of truth
+# ============================================================
+
+@dataclass
+class RefinementDecision:
+    """Per-line record of baseline vs refined vs applied timing."""
+    index: int
+    lyric_text: str
+    baseline_start: float
+    baseline_end: float
+    baseline_confidence: float
+    baseline_method: str
+    refined_start: float
+    refined_end: float
+    refined_confidence: float
+    refined_method: str
+    applied_start: float
+    applied_end: float
+    accepted: bool
+    rejection_reason: str
+
+
+def gate_refinements(baseline, refined, config):
+    """
+    Compare refined proposals against baseline timings.
+    Only accept proposals that pass ALL validation gates.
+    Returns (applied_lines, decisions) where applied_lines is the
+    final list and decisions is the per-line diagnostic.
+
+    CRITICAL: baseline is the source of truth.  Refined proposals
+    may only nudge local boundaries within tight limits.
+    """
+    max_start_shift = config.get('max_start_shift', 0.40)
+    max_end_shift = config.get('max_end_shift', 0.60)
+    min_conf_gain = config.get('min_confidence_gain', 0.10)
+    min_dur = config.get('min_line_duration', 0.3)
+    max_dur = config.get('max_line_duration', 25.0)
+    max_gap = config.get('max_gap_created', 5.0)
+
+    n = len(baseline)
+    applied = list(baseline)  # start from baseline
+    decisions = []
+
+    accepted_count = 0
+    rejected_count = 0
+
+    for i in range(n):
+        bl = baseline[i]
+        rf = refined[i] if i < len(refined) else bl
+
+        # Default: keep baseline
+        decision = RefinementDecision(
+            index=i,
+            lyric_text='',  # filled by caller
+            baseline_start=bl.start_time,
+            baseline_end=bl.end_time,
+            baseline_confidence=bl.confidence,
+            baseline_method=bl.method,
+            refined_start=rf.start_time,
+            refined_end=rf.end_time,
+            refined_confidence=rf.confidence,
+            refined_method=rf.method,
+            applied_start=bl.start_time,
+            applied_end=bl.end_time,
+            accepted=False,
+            rejection_reason='',
+        )
+
+        # Gate 0: If baseline has no timing, refined can provide it freely
+        # (nothing to protect)
+        if bl.start_time <= 0 or bl.end_time <= 0:
+            if rf.start_time > 0 and rf.end_time > 0 and rf.confidence > 0:
+                applied[i] = rf
+                decision.applied_start = rf.start_time
+                decision.applied_end = rf.end_time
+                decision.accepted = True
+                decision.rejection_reason = ''
+                accepted_count += 1
+                decisions.append(decision)
+                continue
+
+        # Gate 0b: If refined has no timing, keep baseline
+        if rf.start_time <= 0 or rf.end_time <= 0:
+            decision.rejection_reason = 'refined_has_no_timing'
+            rejected_count += 1
+            decisions.append(decision)
+            continue
+
+        # Gate 1: Shift magnitude must be within limits
+        delta_start = abs(rf.start_time - bl.start_time)
+        delta_end = abs(rf.end_time - bl.end_time)
+        if delta_start > max_start_shift:
+            decision.rejection_reason = f'start_shift_too_large({delta_start:.3f}>{max_start_shift})'
+            rejected_count += 1
+            decisions.append(decision)
+            continue
+        if delta_end > max_end_shift:
+            decision.rejection_reason = f'end_shift_too_large({delta_end:.3f}>{max_end_shift})'
+            rejected_count += 1
+            decisions.append(decision)
+            continue
+
+        # Gate 2: Confidence must meaningfully improve
+        if rf.confidence < bl.confidence + min_conf_gain:
+            decision.rejection_reason = (
+                f'insufficient_confidence_gain('
+                f'{rf.confidence:.3f}<{bl.confidence:.3f}+{min_conf_gain})'
+            )
+            rejected_count += 1
+            decisions.append(decision)
+            continue
+
+        # Gate 3: Resulting duration must be sane
+        new_dur = rf.end_time - rf.start_time
+        if new_dur < min_dur:
+            decision.rejection_reason = f'duration_too_short({new_dur:.3f}<{min_dur})'
+            rejected_count += 1
+            decisions.append(decision)
+            continue
+        if new_dur > max_dur:
+            decision.rejection_reason = f'duration_too_long({new_dur:.3f}>{max_dur})'
+            rejected_count += 1
+            decisions.append(decision)
+            continue
+
+        # Gate 4: Must not break monotonic order with neighbors
+        prev_end = applied[i - 1].end_time if i > 0 else 0
+        next_start = baseline[i + 1].start_time if i + 1 < n else float('inf')
+
+        if rf.start_time < prev_end - 0.05:
+            decision.rejection_reason = (
+                f'breaks_monotonic_with_prev('
+                f'{rf.start_time:.3f}<{prev_end:.3f})'
+            )
+            rejected_count += 1
+            decisions.append(decision)
+            continue
+
+        if next_start > 0 and rf.end_time > next_start + 0.05:
+            decision.rejection_reason = (
+                f'overlaps_next_line('
+                f'{rf.end_time:.3f}>{next_start:.3f})'
+            )
+            rejected_count += 1
+            decisions.append(decision)
+            continue
+
+        # Gate 5: Must not create absurd gap with neighbors
+        if i > 0 and prev_end > 0:
+            gap_before = rf.start_time - prev_end
+            if gap_before > max_gap:
+                decision.rejection_reason = (
+                    f'creates_large_gap_before({gap_before:.3f}>{max_gap})'
+                )
+                rejected_count += 1
+                decisions.append(decision)
+                continue
+
+        # Gate 6: Time must not go backwards
+        if rf.start_time >= rf.end_time:
+            decision.rejection_reason = 'start_after_end'
+            rejected_count += 1
+            decisions.append(decision)
+            continue
+
+        # All gates passed — accept refinement
+        applied[i] = AlignedLine(
+            index=bl.index,
+            start_time=rf.start_time,
+            end_time=rf.end_time,
+            confidence=rf.confidence,
+            is_anchor=rf.is_anchor or bl.is_anchor,
+            method='refined',
+        )
+        decision.applied_start = rf.start_time
+        decision.applied_end = rf.end_time
+        decision.accepted = True
+        accepted_count += 1
+        decisions.append(decision)
+
+    debug(f"Gating: {accepted_count} accepted, {rejected_count} rejected "
+          f"out of {n} lines")
+    return applied, decisions
 
 
 # ============================================================
@@ -1381,6 +2073,8 @@ class AlignmentPipeline:
 
     def run(self):
         start_time = time_module.time()
+        strategy = self.config.get('strategy', 'full')
+        progress(f"Pipeline strategy: {strategy}")
 
         # --- Step 1: Audio preprocessing ---
         audio_for_whisper = self.audio_path
@@ -1390,17 +2084,26 @@ class AlignmentPipeline:
             tmp_dir = tempfile.mkdtemp(prefix='mreels_demucs_')
             vocals_path = separate_vocals(self.audio_path, tmp_dir)
             if vocals_path:
-                audio_for_whisper = vocals_path
                 vocal_separation_used = True
+                # KEY FIX: Only use vocal stem for whisper if config says so
+                if self.config.get('use_stem_for_alignment', True):
+                    audio_for_whisper = vocals_path
+                    debug("Using vocal stem for BOTH segmentation and alignment")
+                else:
+                    # Stem available for segmentation energy analysis, but
+                    # whisper runs on original audio for better transcription
+                    debug("Using vocal stem for segmentation ONLY, original audio for alignment")
             else:
                 debug("Proceeding without vocal separation")
 
         # --- Step 2: Whisper transcription with word timestamps ---
+        t2 = time_module.time()
         words = transcribe_with_words(
             audio_for_whisper,
             model_size=self.whisper_model,
             whisper_model_override=None,
         )
+        debug(f"Transcription took {time_module.time() - t2:.1f}s")
 
         if not words:
             error_exit("No words found in transcription")
@@ -1408,40 +2111,337 @@ class AlignmentPipeline:
         # Detect vocal onset
         vocal_onset = max(0, words[0].start - 0.5) if words else 0
         total_duration = words[-1].end if words else 0
-        debug(f"Vocal onset: {vocal_onset:.2f}s, total: {total_duration:.2f}s")
+        debug(f"Vocal onset: {vocal_onset:.2f}s, total: {total_duration:.2f}s, "
+              f"words: {len(words)}")
 
-        # --- Step 3: VAD-based chunking ---
-        progress("Computing vocal activity and creating chunks...")
+        # --- Step 3: Compute audio duration from WAV ---
         try:
             rms, sr, hop_sec, audio_duration = read_wav_energy(self.audio_path)
             total_duration = max(total_duration, audio_duration)
+        except Exception as e:
+            debug(f"WAV energy read failed ({e}), using whisper duration")
+            rms, hop_sec = None, None
+
+        # ===========================================================
+        # Branch by strategy
+        # ===========================================================
+
+        refinement_decisions = []  # per-line diagnostic
+
+        if strategy == 'segment_match':
+            aligned, chunks, chunk_choices, collapsed_regions = \
+                self._run_segment_match_strategy(
+                    words, total_duration, vocal_onset, rms, hop_sec)
+
+        elif strategy == 'baseline_plus_gated_refinement':
+            aligned, chunks, chunk_choices, collapsed_regions, refinement_decisions = \
+                self._run_gated_refinement_strategy(
+                    words, total_duration, vocal_onset, rms, hop_sec)
+
+        elif strategy == 'hybrid':
+            aligned, chunks, chunk_choices, collapsed_regions = \
+                self._run_hybrid_strategy(
+                    words, total_duration, vocal_onset, rms, hop_sec)
+
+        else:  # 'full' — original full DTW pipeline
+            aligned, chunks, chunk_choices, collapsed_regions = \
+                self._run_full_strategy(
+                    words, total_duration, vocal_onset, rms, hop_sec)
+
+        # --- Interpolate remaining unmatched ---
+        aligned = interpolate_unmatched(aligned, total_duration, vocal_onset, self.lyrics)
+
+        # --- Sanity check and fix ordering ---
+        aligned = self._fix_ordering(aligned)
+
+        # --- Generate debug report ---
+        debug_info = generate_debug_report(
+            aligned, chunks, chunk_choices,
+            collapsed_regions, vocal_onset, total_duration,
+            words, self.mode, self.whisper_model,
+        )
+        debug_info['strategy'] = strategy
+        debug_info['vocal_separation_used'] = vocal_separation_used
+        debug_info['stem_for_alignment'] = self.config.get('use_stem_for_alignment', True)
+
+        # Add per-line refinement diagnostics if available
+        if refinement_decisions:
+            accepted = sum(1 for d in refinement_decisions if d.accepted)
+            rejected = sum(1 for d in refinement_decisions if not d.accepted)
+            debug_info['refinement_summary'] = {
+                'accepted': accepted,
+                'rejected': rejected,
+                'total': len(refinement_decisions),
+            }
+            # Rejection reason breakdown
+            reasons = {}
+            for d in refinement_decisions:
+                if d.rejection_reason:
+                    # Extract reason category (before the parenthetical details)
+                    cat = d.rejection_reason.split('(')[0]
+                    reasons[cat] = reasons.get(cat, 0) + 1
+            debug_info['rejection_reasons'] = reasons
+
+        elapsed = time_module.time() - start_time
+        progress(f"Alignment complete in {elapsed:.1f}s")
+
+        # Build output
+        lines_out = []
+        for al in aligned:
+            line_out = {
+                "index": al.index,
+                "start_time": round(al.start_time, 3),
+                "end_time": round(al.end_time, 3),
+                "confidence": round(al.confidence, 3),
+                "is_anchor": al.is_anchor,
+                "method": al.method,
+            }
+            # Attach per-line diagnostic if available
+            if refinement_decisions and al.index < len(refinement_decisions):
+                d = refinement_decisions[al.index]
+                line_out['baseline_start'] = round(d.baseline_start, 3)
+                line_out['baseline_end'] = round(d.baseline_end, 3)
+                line_out['baseline_confidence'] = round(d.baseline_confidence, 3)
+                line_out['refined_start'] = round(d.refined_start, 3)
+                line_out['refined_end'] = round(d.refined_end, 3)
+                line_out['refined_confidence'] = round(d.refined_confidence, 3)
+                line_out['refinement_accepted'] = d.accepted
+                line_out['rejection_reason'] = d.rejection_reason
+            lines_out.append(line_out)
+
+        # Log per-line comparison report
+        if refinement_decisions:
+            progress("=== REFINEMENT GATING REPORT ===")
+            for d in refinement_decisions:
+                status = "ACCEPT" if d.accepted else "REJECT"
+                ds = round(d.refined_start - d.baseline_start, 3) if d.baseline_start > 0 else 0
+                de = round(d.refined_end - d.baseline_end, 3) if d.baseline_end > 0 else 0
+                progress(
+                    f"  [{d.index:2d}] {status:6s} "
+                    f"bl={d.baseline_start:.2f}-{d.baseline_end:.2f} "
+                    f"rf={d.refined_start:.2f}-{d.refined_end:.2f} "
+                    f"ds={ds:+.3f} de={de:+.3f} "
+                    f"blConf={d.baseline_confidence:.2f} rfConf={d.refined_confidence:.2f} "
+                    f"{d.rejection_reason}"
+                )
+            accepted = sum(1 for d in refinement_decisions if d.accepted)
+            progress(f"=== {accepted}/{len(refinement_decisions)} refinements accepted ===")
+
+        return {
+            "version": 3,
+            "lines": lines_out,
+            "debug": debug_info,
+        }
+
+    # ── Strategy: segment_match (Legacy+) ─────────────────────────
+
+    def _run_segment_match_strategy(self, words, total_duration, vocal_onset,
+                                     rms, hop_sec):
+        """
+        Segment-level Levenshtein matching with position-aware DP.
+        Mirrors the old Swift WhisperAlignmentService but uses
+        openai-whisper word-level data grouped into pseudo-segments.
+        """
+        progress("Strategy: segment_match (Levenshtein DP)")
+
+        # Group words into pseudo-segments
+        t0 = time_module.time()
+        segments = group_words_to_segments(words, max_gap=0.5, max_duration=8.0)
+        debug(f"Grouped {len(words)} words into {len(segments)} pseudo-segments "
+              f"in {time_module.time() - t0:.2f}s")
+
+        # Run segment-match alignment
+        t0 = time_module.time()
+        aligned = segment_match_alignment(
+            segments, self.lyrics, total_duration, vocal_onset,
+            beam_width=self.config['beam_width'],
+            search_window_seconds=self.config.get('search_window_seconds', 30),
+            match_threshold=self.config.get('match_threshold', 0.25),
+            max_combine=self.config.get('max_combine_segments', 3),
+            position_weight=self.config.get('position_weight', 0.35),
+            refinement_passes=self.config.get('recovery_passes', 1),
+        )
+        debug(f"Segment-match alignment took {time_module.time() - t0:.1f}s")
+
+        # Collapse detection
+        collapsed_regions = []
+        if self.config['enable_collapse_detection']:
+            collapsed_regions = detect_collapse(
+                aligned, total_duration,
+                threshold=self.config['collapse_threshold']
+            )
+            if collapsed_regions:
+                debug(f"Found {len(collapsed_regions)} collapsed regions")
+
+        # No chunk-level data for this strategy
+        chunks = []
+        chunk_choices = []
+        return aligned, chunks, chunk_choices, collapsed_regions
+
+    # ── Strategy: baseline + gated refinement (DEFAULT) ─────────
+
+    def _run_gated_refinement_strategy(self, words, total_duration, vocal_onset,
+                                        rms, hop_sec):
+        """
+        1. Run segment-match baseline (authoritative)
+        2. Run local DTW to generate refinement proposals
+        3. Gate each proposal against baseline with strict validation
+        4. Return baseline-preserved timings + per-line diagnostics
+        """
+        progress("Strategy: baseline + gated refinement")
+
+        # ── Phase 1: Baseline (segment-match, source of truth) ──
+        segments = group_words_to_segments(words, max_gap=0.5, max_duration=8.0)
+        debug(f"Grouped {len(words)} words into {len(segments)} segments")
+
+        t0 = time_module.time()
+        baseline = segment_match_alignment(
+            segments, self.lyrics, total_duration, vocal_onset,
+            beam_width=self.config['beam_width'],
+            search_window_seconds=self.config.get('search_window_seconds', 30),
+            match_threshold=self.config.get('match_threshold', 0.25),
+            max_combine=self.config.get('max_combine_segments', 3),
+            position_weight=self.config.get('position_weight', 0.35),
+            refinement_passes=self.config.get('recovery_passes', 1),
+        )
+        baseline_time = time_module.time() - t0
+        bl_anchors = sum(1 for a in baseline if a.is_anchor)
+        bl_matched = sum(1 for a in baseline if a.confidence > 0)
+        debug(f"Baseline: {bl_matched}/{len(baseline)} matched, "
+              f"{bl_anchors} anchors in {baseline_time:.1f}s")
+
+        # ── Phase 2: Generate refinement proposals (local DTW) ──
+        t0 = time_module.time()
+        max_region = self.config.get('local_dtw_max_region', 5)
+        # Start from a COPY of baseline — local_dtw_refinement only
+        # touches weak lines and only if DTW confidence is higher
+        proposals = local_dtw_refinement(
+            list(baseline), words, self.lyrics, total_duration, vocal_onset,
+            band_ratio=self.config['dtw_band_ratio'],
+            max_region=max_region,
+        )
+        debug(f"Refinement proposals generated in {time_module.time() - t0:.1f}s")
+
+        # ── Phase 3: Gate each proposal against baseline ──
+        t0 = time_module.time()
+        applied, decisions = gate_refinements(baseline, proposals, self.config)
+
+        # Fill in lyric text for diagnostics
+        for d in decisions:
+            if d.index < len(self.lyrics):
+                d.lyric_text = self.lyrics[d.index].japanese[:30]
+
+        debug(f"Gating took {time_module.time() - t0:.2f}s")
+
+        # Collapse detection on the applied (gated) result
+        collapsed_regions = []
+        if self.config['enable_collapse_detection']:
+            collapsed_regions = detect_collapse(
+                applied, total_duration,
+                threshold=self.config['collapse_threshold']
+            )
+            if collapsed_regions:
+                debug(f"Found {len(collapsed_regions)} collapsed regions")
+
+        chunks = []
+        chunk_choices = []
+        return applied, chunks, chunk_choices, collapsed_regions, decisions
+
+    # ── Strategy: hybrid (ASR anchors + local DTW) ────────────────
+
+    def _run_hybrid_strategy(self, words, total_duration, vocal_onset,
+                              rms, hop_sec):
+        """
+        1. Segment-match to find anchors (ASR-based)
+        2. Local character-level DTW refinement on weak regions only
+        3. Collapse detection + recovery
+        """
+        progress("Strategy: hybrid (ASR anchors + local DTW refinement)")
+
+        # Phase 1: Segment matching for anchors
+        segments = group_words_to_segments(words, max_gap=0.5, max_duration=8.0)
+        debug(f"Grouped {len(words)} words into {len(segments)} segments")
+
+        t0 = time_module.time()
+        aligned = segment_match_alignment(
+            segments, self.lyrics, total_duration, vocal_onset,
+            beam_width=self.config['beam_width'],
+            search_window_seconds=self.config.get('search_window_seconds', 40),
+            match_threshold=self.config.get('match_threshold', 0.20),
+            max_combine=self.config.get('max_combine_segments', 4),
+            position_weight=self.config.get('position_weight', 0.4),
+            refinement_passes=self.config.get('recovery_passes', 2),
+        )
+        anchor_time = time_module.time() - t0
+        anchors_found = sum(1 for a in aligned if a.is_anchor)
+        weak_count = sum(1 for a in aligned if a.confidence < 0.5)
+        debug(f"Anchor phase: {anchors_found} anchors, {weak_count} weak lines "
+              f"in {anchor_time:.1f}s")
+
+        # Phase 2: Local DTW refinement on weak regions
+        t0 = time_module.time()
+        max_region = self.config.get('local_dtw_max_region', 5)
+        aligned = local_dtw_refinement(
+            aligned, words, self.lyrics, total_duration, vocal_onset,
+            band_ratio=self.config['dtw_band_ratio'],
+            max_region=max_region,
+        )
+        debug(f"Local DTW refinement took {time_module.time() - t0:.1f}s")
+
+        # Phase 3: Collapse detection
+        collapsed_regions = []
+        if self.config['enable_collapse_detection']:
+            collapsed_regions = detect_collapse(
+                aligned, total_duration,
+                threshold=self.config['collapse_threshold']
+            )
+            if collapsed_regions:
+                debug(f"Found {len(collapsed_regions)} collapsed regions")
+                whisper_chars = expand_words_to_chars(words)
+                chunks = []  # no VAD chunks needed for recovery
+                aligned = recover_collapsed_regions(
+                    collapsed_regions, aligned, words, whisper_chars,
+                    self.lyrics, chunks,
+                    band_ratio=self.config['dtw_band_ratio'],
+                    recovery_passes=max(1, self.config['recovery_passes']),
+                )
+
+        chunks = []
+        chunk_choices = []
+        return aligned, chunks, chunk_choices, collapsed_regions
+
+    # ── Strategy: full (original Maximum pipeline) ────────────────
+
+    def _run_full_strategy(self, words, total_duration, vocal_onset,
+                            rms, hop_sec):
+        """Original full character-level DTW pipeline."""
+        progress("Strategy: full (character-level DTW)")
+
+        # VAD-based chunking
+        if rms is not None and hop_sec is not None:
             chunks = create_chunks_from_energy(
                 rms, hop_sec, total_duration,
                 target_seconds=self.config['chunk_target_seconds'],
                 min_seconds=self.config['chunk_min_seconds'],
                 max_seconds=self.config['chunk_max_seconds'],
             )
-        except Exception as e:
-            debug(f"Chunking failed ({e}), using single chunk")
+        else:
             chunks = [Chunk(index=0, start_time=0, end_time=total_duration)]
-
         debug(f"Created {len(chunks)} chunks")
 
-        # Assign words to chunks
         assign_words_to_chunks(words, chunks)
 
-        # --- Step 4: Expand words to character timings ---
         whisper_chars = expand_words_to_chars(words)
         debug(f"Expanded to {len(whisper_chars)} character timings")
 
-        # --- Step 5: Full-song character DTW as baseline ---
+        # Full-song character DTW baseline
         progress("Running character-level forced alignment...")
         baseline_aligned = full_song_character_alignment(
             words, self.lyrics,
             band_ratio=self.config['dtw_band_ratio']
         )
 
-        # --- Step 6: Chunk-based candidate alignment ---
+        # Chunk-based candidates
         chunk_candidates = []
         chunk_choices = []
 
@@ -1460,20 +2460,15 @@ class AlignmentPipeline:
                     band_ratio=self.config['dtw_band_ratio'],
                 )
                 chunk_candidates.append(candidates)
-
-                # Advance cursor estimate based on best candidate
                 if candidates:
-                    best = candidates[0]
-                    line_cursor = best.line_end
+                    line_cursor = candidates[0].line_end
 
-            # --- Step 7: Global monotonic DP ---
             progress("Running global monotonic DP across chunks...")
             chunk_choices = global_monotonic_dp(
                 chunks, chunk_candidates, len(self.lyrics),
                 beam_width=self.config['beam_width'],
             )
 
-            # --- Step 8: Merge chunk results with baseline ---
             aligned = self._merge_chunk_and_baseline(
                 baseline_aligned, chunk_choices, chunks
             )
@@ -1481,7 +2476,7 @@ class AlignmentPipeline:
             aligned = baseline_aligned
             chunk_choices = [None]
 
-        # --- Step 9: Collapse detection ---
+        # Collapse detection + recovery
         collapsed_regions = []
         if self.config['enable_collapse_detection']:
             progress("Detecting alignment collapse...")
@@ -1499,39 +2494,7 @@ class AlignmentPipeline:
                     recovery_passes=max(1, self.config['recovery_passes']),
                 )
 
-        # --- Step 10: Interpolate remaining unmatched ---
-        aligned = interpolate_unmatched(aligned, total_duration, vocal_onset, self.lyrics)
-
-        # --- Step 11: Sanity check and fix ordering ---
-        aligned = self._fix_ordering(aligned)
-
-        # --- Step 12: Generate debug report ---
-        debug_info = generate_debug_report(
-            aligned, chunks, chunk_choices,
-            collapsed_regions, vocal_onset, total_duration,
-            words, self.mode, self.whisper_model,
-        )
-
-        elapsed = time_module.time() - start_time
-        progress(f"Alignment complete in {elapsed:.1f}s")
-
-        # Build output
-        lines_out = []
-        for al in aligned:
-            lines_out.append({
-                "index": al.index,
-                "start_time": round(al.start_time, 3),
-                "end_time": round(al.end_time, 3),
-                "confidence": round(al.confidence, 3),
-                "is_anchor": al.is_anchor,
-                "method": al.method,
-            })
-
-        return {
-            "version": 1,
-            "lines": lines_out,
-            "debug": debug_info,
-        }
+        return aligned, chunks, chunk_choices, collapsed_regions
 
     def _merge_chunk_and_baseline(self, baseline, chunk_choices, chunks):
         """
@@ -1591,8 +2554,8 @@ def main():
     )
     parser.add_argument('--audio', required=True, help="Path to audio WAV file")
     parser.add_argument('--lyrics', required=True, help="Path to lyrics JSON file")
-    parser.add_argument('--mode', default='balanced',
-                        choices=['fast', 'balanced', 'accurate', 'maximum'])
+    parser.add_argument('--mode', default='baseline',
+                        choices=list(MODE_CONFIG.keys()))
     parser.add_argument('--output', required=True, help="Path to output JSON file")
     parser.add_argument('--whisper-model', default=None,
                         help="Override whisper model name")

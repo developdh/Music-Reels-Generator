@@ -54,7 +54,10 @@ struct AdvancedAlignmentResult: Codable {
         let totalDuration: Double?
         let totalWords: Int?
         let mode: String?
+        let strategy: String?
         let whisperModel: String?
+        let vocalSeparationUsed: Bool?
+        let stemForAlignment: Bool?
         let methodCounts: [String: Int]?
         let binMetrics: [BinMetric]?
         let chunks: [ChunkInfo]?
@@ -64,8 +67,10 @@ struct AdvancedAlignmentResult: Codable {
             case vocalOnset = "vocal_onset"
             case totalDuration = "total_duration"
             case totalWords = "total_words"
-            case mode
+            case mode, strategy
             case whisperModel = "whisper_model"
+            case vocalSeparationUsed = "vocal_separation_used"
+            case stemForAlignment = "stem_for_alignment"
             case methodCounts = "method_counts"
             case binMetrics = "bin_metrics"
             case chunks
@@ -319,16 +324,16 @@ enum AdvancedAlignmentService {
         arguments: [String],
         onProgress: ((String) -> Void)?
     ) async throws -> ProcessResult {
-        // Use ProcessRunner for the actual execution, but also parse
-        // stderr for progress messages
-        let result = try await ProcessRunner.run(python, arguments: arguments)
-
-        // Parse progress messages from stderr
-        let stderrLines = result.stderr.components(separatedBy: "\n")
-        for line in stderrLines {
+        // Use streaming variant so stderr [PROGRESS] lines are delivered live
+        let result = try await ProcessRunner.runStreaming(
+            python,
+            arguments: arguments,
+            timeout: 600 // 10 minute timeout for large files
+        ) { line in
             if line.hasPrefix("[PROGRESS] ") {
                 let msg = String(line.dropFirst("[PROGRESS] ".count))
-                await MainActor.run {
+                // Deliver progress on main actor since UI observes it
+                Task { @MainActor in
                     onProgress?(msg)
                 }
             }
@@ -344,7 +349,10 @@ enum AdvancedAlignmentService {
         blockCount: Int
     ) {
         print("\n=== ADVANCED ALIGNMENT REPORT ===")
-        print("Mode: \(debug.mode ?? "unknown"), Model: \(debug.whisperModel ?? "unknown")")
+        print("Mode: \(debug.mode ?? "unknown"), Strategy: \(debug.strategy ?? "unknown"), Model: \(debug.whisperModel ?? "unknown")")
+        if let stemUsed = debug.vocalSeparationUsed, stemUsed {
+            print("Vocal separation: YES, used for alignment: \(debug.stemForAlignment == true ? "YES" : "NO")")
+        }
         print("Vocal onset: \(debug.vocalOnset.map { String(format: "%.2f", $0) } ?? "?")s")
         print("Total words: \(debug.totalWords ?? 0)")
 
