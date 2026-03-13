@@ -485,20 +485,61 @@ class ProjectViewModel: ObservableObject {
 
         guard !middleIndices.isEmpty else { return 0 }
 
-        // Weight by text length (min 1 to avoid zero-division)
-        let weights = middleIndices.map { max(1.0, Double(project.lyricBlocks[$0].japanese.count)) }
-        let totalWeight = weights.reduce(0, +)
+        // Use vocal-range-aware distribution if whisper segments are available
+        if !cachedWhisperSegments.isEmpty {
+            // Reindex middle blocks into a contiguous temp array, distribute, then write back
+            var tempBlocks = middleIndices.map { project.lyricBlocks[$0] }
+            WhisperAlignmentService.distributeBlocksIntoVocalRanges(
+                blocks: &tempBlocks,
+                indices: 0..<tempBlocks.count,
+                segments: cachedWhisperSegments,
+                startBound: leftEnd,
+                endBound: rightStart,
+                confidence: 0.3
+            )
+            for (j, idx) in middleIndices.enumerated() {
+                project.lyricBlocks[idx].startTime = tempBlocks[j].startTime
+                project.lyricBlocks[idx].endTime = tempBlocks[j].endTime
+                project.lyricBlocks[idx].confidence = max(project.lyricBlocks[idx].confidence ?? 0, 0.3)
+            }
+        } else {
+            // Fallback: gap-aware proportional distribution (no segment data)
+            // Estimate duration per block based on text length, leave gaps
+            let weights = middleIndices.map { max(1.0, Double(project.lyricBlocks[$0].japanese.count)) }
+            let totalWeight = weights.reduce(0, +)
+            let estimatedTotal = middleIndices.reduce(0.0) { sum, idx in
+                let chars = max(1, project.lyricBlocks[idx].japanese.count)
+                return sum + min(max(Double(chars) / 4.0, 1.5), 8.0)
+            }
 
-        var cursor = leftEnd
-        for (j, idx) in middleIndices.enumerated() {
-            let proportion = weights[j] / totalWeight
-            let blockDuration = availableTime * proportion
+            if estimatedTotal < availableTime * 0.85 {
+                // Blocks need less time than available — space them out with gaps
+                let spacing = (availableTime - estimatedTotal) / Double(middleIndices.count + 1)
+                var cursor = leftEnd + spacing
+                for idx in middleIndices {
+                    let chars = max(1, project.lyricBlocks[idx].japanese.count)
+                    let dur = min(max(Double(chars) / 4.0, 1.5), 8.0)
+                    project.lyricBlocks[idx].startTime = cursor
+                    project.lyricBlocks[idx].endTime = cursor + dur
+                    project.lyricBlocks[idx].confidence = max(project.lyricBlocks[idx].confidence ?? 0, 0.3)
+                    cursor += dur + spacing
+                }
+            } else {
+                // Blocks need most of the time — proportional with small gaps
+                let gapPerBlock = min(0.3, availableTime * 0.02)
+                let totalGaps = gapPerBlock * Double(max(0, middleIndices.count - 1))
+                let usable = availableTime - totalGaps
 
-            project.lyricBlocks[idx].startTime = cursor
-            project.lyricBlocks[idx].endTime = cursor + blockDuration
-            // Mark as corrected — moderate confidence
-            project.lyricBlocks[idx].confidence = max(project.lyricBlocks[idx].confidence ?? 0, 0.3)
-            cursor += blockDuration
+                var cursor = leftEnd
+                for (j, idx) in middleIndices.enumerated() {
+                    let proportion = weights[j] / totalWeight
+                    let blockDuration = usable * proportion
+                    project.lyricBlocks[idx].startTime = cursor
+                    project.lyricBlocks[idx].endTime = cursor + blockDuration
+                    project.lyricBlocks[idx].confidence = max(project.lyricBlocks[idx].confidence ?? 0, 0.3)
+                    cursor += blockDuration + gapPerBlock
+                }
+            }
         }
 
         print("[AnchorCorrection] Corrected \(middleIndices.count) blocks between anchors #\(leftAnchorIdx + 1) and #\(rightAnchorIdx + 1) (\(String(format: "%.1f", leftEnd))–\(String(format: "%.1f", rightStart))s)")
@@ -711,6 +752,14 @@ class ProjectViewModel: ObservableObject {
                 // Cache segments for fast local re-alignment later
                 self.cachedWhisperSegments = segments
 
+                // Dump whisper segments for debugging
+                var segLines: [String] = ["=== WHISPER SEGMENTS ==="]
+                for (i, seg) in segments.enumerated() {
+                    segLines.append(String(format: "[%2d] %6.2f–%6.2f (dur=%.2f) %@", i, seg.startTime, seg.endTime, seg.endTime - seg.startTime, String(seg.text.prefix(40))))
+                }
+                segLines.append("=== END ===")
+                try? segLines.joined(separator: "\n").write(toFile: "/tmp/mreels_whisper_segments.txt", atomically: true, encoding: .utf8)
+
                 elapsed = CFAbsoluteTimeGetCurrent() - stageStart
                 print("[Alignment] Stage 2: Whisper transcription completed in \(String(format: "%.1f", elapsed))s (\(segments.count) segments, cached)")
 
@@ -754,6 +803,9 @@ class ProjectViewModel: ObservableObject {
                 print("[Alignment] Auto-corrected between \(anchorCount) anchors after alignment")
             }
 
+            // Dump final timing to file for debugging
+            dumpBlockTimingToFile(label: "post-alignment")
+
             // Cleanup
             try? FileManager.default.removeItem(at: audioURL)
 
@@ -762,6 +814,30 @@ class ProjectViewModel: ObservableObject {
             print("[Alignment] Pipeline FAILED after \(String(format: "%.1f", totalElapsed))s: \(error.localizedDescription)")
             showError(error.localizedDescription)
         }
+    }
+
+    /// Dump current block timing to /tmp for debugging gap issues
+    private func dumpBlockTimingToFile(label: String) {
+        var lines: [String] = ["=== BLOCK TIMING DUMP (\(label)) ==="]
+        for (i, block) in project.lyricBlocks.enumerated() {
+            let timeStr: String
+            if let s = block.startTime, let e = block.endTime {
+                timeStr = String(format: "%6.2f–%6.2f (dur=%.2f)", s, e, e - s)
+            } else {
+                timeStr = "   -.--–   -.-- (no timing)"
+            }
+            if i > 0, let prevEnd = project.lyricBlocks[i - 1].endTime, let curStart = block.startTime {
+                let gap = curStart - prevEnd
+                if gap > 0.5 {
+                    lines.append(String(format: "     ⏸ GAP %.2fs", gap))
+                }
+            }
+            let ja = String(block.japanese.prefix(25))
+            let conf = block.confidence ?? 0
+            lines.append(String(format: "[%2d] conf=%.2f %@ %@", i, conf, timeStr, ja))
+        }
+        lines.append("=== END DUMP ===")
+        try? lines.joined(separator: "\n").write(toFile: "/tmp/mreels_timing_\(label).txt", atomically: true, encoding: .utf8)
     }
 
     // MARK: - Export
@@ -823,6 +899,7 @@ class ProjectViewModel: ObservableObject {
             }
 
             statusMessage = "Project loaded: \(project.title)"
+            dumpBlockTimingToFile(label: "loaded-project")
         } catch {
             showError(error.localizedDescription)
         }

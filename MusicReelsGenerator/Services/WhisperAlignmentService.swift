@@ -124,7 +124,8 @@ enum WhisperAlignmentService {
         return segments
     }
 
-    /// Merge very short consecutive segments into longer ones
+    /// Merge very short consecutive segments into longer ones.
+    /// Never merge across non-speech segments (instrumentals/applause).
     private static func mergeFragments(_ segments: [WhisperSegment], minDuration: Double) -> [WhisperSegment] {
         guard !segments.isEmpty else { return segments }
 
@@ -135,8 +136,13 @@ enum WhisperAlignmentService {
             let next = segments[i]
             let currentDuration = current.endTime - current.startTime
 
-            // Merge if current segment is very short and next is close
-            if currentDuration < minDuration && (next.startTime - current.endTime) < 0.5 {
+            // Never merge speech with non-speech segments
+            let currentIsNonSpeech = isNonSpeechSegment(current)
+            let nextIsNonSpeech = isNonSpeechSegment(next)
+
+            // Merge if current segment is very short and next is close, and both are same type
+            if currentDuration < minDuration && (next.startTime - current.endTime) < 0.5
+                && currentIsNonSpeech == nextIsNonSpeech {
                 current = WhisperSegment(
                     startTime: current.startTime,
                     endTime: next.endTime,
@@ -149,6 +155,27 @@ enum WhisperAlignmentService {
         }
         merged.append(current)
         return merged
+    }
+
+    /// Check if a whisper segment is a non-speech marker (applause, music, etc.)
+    /// Whisper often produces segments like (拍手), (音楽), [Music], [Applause], etc.
+    /// for instrumental/non-vocal sections.
+    private static func isNonSpeechSegment(_ segment: WhisperSegment) -> Bool {
+        let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Detect markers in parentheses or brackets: (拍手), [Music], etc.
+        if (text.hasPrefix("(") && text.hasSuffix(")")) ||
+           (text.hasPrefix("[") && text.hasSuffix("]")) ||
+           (text.hasPrefix("（") && text.hasSuffix("）")) {
+            return true
+        }
+        // Common non-speech markers
+        let nonSpeechPatterns = ["拍手", "音楽", "歓声", "ため息", "笑い", "笑",
+                                  "music", "applause", "laughter", "silence"]
+        let lower = text.lowercased()
+        for pattern in nonSpeechPatterns {
+            if lower.contains(pattern.lowercased()) { return true }
+        }
+        return false
     }
 
     // MARK: - Multi-Pass Position-Aware Alignment
@@ -231,7 +258,12 @@ enum WhisperAlignmentService {
         }
 
         // === Final: Anchor-based interpolation for remaining unmatched blocks ===
-        interpolateFromAnchors(&alignedBlocks, totalDuration: totalDuration, vocalOnset: vocalOnset)
+        interpolateFromAnchors(&alignedBlocks, segments: segments, totalDuration: totalDuration, vocalOnset: vocalOnset)
+
+        // === Post-processing: Cap overly long blocks ===
+        // Whisper segments can be very long (20s+) when they span instrumental sections.
+        // A matched block shouldn't display longer than its text warrants.
+        capOverlongBlocks(&alignedBlocks, segments: segments)
 
         // === Post-processing: Snap boundaries to segment edges ===
         snapBoundariesToSegments(&alignedBlocks, segments: segments)
@@ -286,10 +318,17 @@ enum WhisperAlignmentService {
                 // Skip segments outside the search window
                 if segTime < windowStart - 5 || segTime > windowEnd + 5 { continue }
 
+                // Skip non-speech segments as starting point for matching
+                if isNonSpeechSegment(segments[si]) { continue }
+
                 for span in 1...mode.maxCombineSegments {
                     let endSeg = si + span - 1
                     guard endSeg < S else { break }
 
+                    // Don't combine across non-speech segments (instrumentals)
+                    if span > 1 && isNonSpeechSegment(segments[endSeg]) { break }
+
+                    // Skip combinations that start by including a non-speech segment before si
                     let combinedText = (si...endSeg).map { segments[$0].text }.joined()
                     let textScore = JapaneseTextNormalizer.similarity(blockText, combinedText)
 
@@ -521,8 +560,13 @@ enum WhisperAlignmentService {
             let expectedTime = regionStart + (Double(bi) + 0.5) / Double(B) * regionDuration
 
             for si in 0..<S {
+                // Skip non-speech segments as starting point
+                if isNonSpeechSegment(segments[si]) { continue }
+
                 for span in 1...min(mode.maxCombineSegments, S - si) {
                     let endSeg = si + span - 1
+                    if span > 1 && isNonSpeechSegment(segments[endSeg]) { break }
+
                     let combinedText = (si...endSeg).map { segments[$0].text }.joined()
                     let textScore = JapaneseTextNormalizer.similarity(blockText, combinedText)
 
@@ -676,10 +720,157 @@ enum WhisperAlignmentService {
 
     // MARK: - Interpolation
 
+    /// Find vocal (speech) time ranges within a time window by looking at whisper segments.
+    /// Returns sub-ranges where speech exists, excluding instrumental gaps longer than the threshold.
+    /// Returns empty array if no speech segments exist in the range (pure instrumental).
+    private static func vocalRanges(
+        in segments: [WhisperSegment],
+        from start: Double,
+        to end: Double,
+        gapThreshold: Double = 3.0
+    ) -> [(start: Double, end: Double)] {
+        // Collect segments that overlap with [start, end]
+        let relevant = segments.filter { $0.endTime > start && $0.startTime < end }
+        guard !relevant.isEmpty else {
+            // No speech segments = pure instrumental — return empty
+            print("[VocalRanges] No speech segments in \(String(format: "%.1f", start))–\(String(format: "%.1f", end))s — pure instrumental gap")
+            return []
+        }
+
+        // Build vocal ranges by merging segments and splitting at large gaps
+        var ranges: [(start: Double, end: Double)] = []
+        var rangeStart = max(relevant[0].startTime, start)
+        var rangeEnd = relevant[0].endTime
+
+        for seg in relevant.dropFirst() {
+            let segStart = seg.startTime
+            let segEnd = seg.endTime
+            if segStart - rangeEnd > gapThreshold {
+                // Large gap = instrumental break — close current range, start new one
+                ranges.append((start: rangeStart, end: min(rangeEnd, end)))
+                rangeStart = max(segStart, start)
+            }
+            rangeEnd = max(rangeEnd, segEnd)
+        }
+        ranges.append((start: rangeStart, end: min(rangeEnd, end)))
+
+        // Only extend edges by a small amount (up to 1s) to provide a little padding,
+        // but never extend across large gaps
+        let edgePadding = 1.0
+        if !ranges.isEmpty {
+            ranges[0].start = max(start, ranges[0].start - edgePadding)
+            ranges[ranges.count - 1].end = min(end, ranges[ranges.count - 1].end + edgePadding)
+        }
+
+        return ranges
+    }
+
+    /// Estimate a reasonable display duration for a lyric line based on text length.
+    /// Japanese singing typically runs ~3-6 characters per second.
+    /// Returns a duration that covers the lyric but doesn't over-extend into gaps.
+    private static func estimateLyricDuration(textLength: Int) -> Double {
+        let chars = max(1, textLength)
+        // ~4 chars/sec for Japanese singing, with a minimum of 1.5s and max of 8s
+        let estimate = Double(chars) / 4.0
+        return min(max(estimate, 1.5), 8.0)
+    }
+
+    /// Distribute blocks into vocal ranges, skipping instrumental gaps.
+    /// Each block gets a duration based on its text length and singing speed estimate,
+    /// NOT wall-to-wall filling. Gaps between lyric lines are preserved.
+    static func distributeBlocksIntoVocalRanges(
+        blocks: inout [LyricBlock],
+        indices: Range<Int>,
+        segments: [WhisperSegment],
+        startBound: Double,
+        endBound: Double,
+        gapThreshold: Double = 3.0,
+        confidence: Double = 0.05
+    ) {
+        let count = indices.count
+        guard count > 0, endBound > startBound else { return }
+
+        let ranges = vocalRanges(in: segments, from: startBound, to: endBound, gapThreshold: gapThreshold)
+        let totalVocalDuration = ranges.reduce(0.0) { $0 + ($1.end - $1.start) }
+        guard totalVocalDuration > 0 else { return }
+
+        // Distribute block count across ranges proportional to range duration
+        var rangeBlockCounts = ranges.map { range -> Int in
+            let proportion = (range.end - range.start) / totalVocalDuration
+            return max(0, Int((proportion * Double(count)).rounded()))
+        }
+
+        // Fix rounding: ensure total equals count
+        let assigned = rangeBlockCounts.reduce(0, +)
+        if assigned < count {
+            if let maxIdx = rangeBlockCounts.indices.max(by: { rangeBlockCounts[$0] < rangeBlockCounts[$1] }) {
+                rangeBlockCounts[maxIdx] += count - assigned
+            }
+        } else if assigned > count {
+            if let maxIdx = rangeBlockCounts.indices.max(by: { rangeBlockCounts[$0] < rangeBlockCounts[$1] }) {
+                rangeBlockCounts[maxIdx] -= assigned - count
+            }
+        }
+
+        // Assign blocks to ranges with gap-aware timing
+        var blockOffset = indices.lowerBound
+        for (rangeIdx, range) in ranges.enumerated() {
+            let blocksInRange = rangeBlockCounts[rangeIdx]
+            guard blocksInRange > 0 else { continue }
+
+            let rangeIndices = blockOffset..<(blockOffset + blocksInRange)
+            let textLengths = rangeIndices.map { max(1.0, Double(blocks[$0].japanese.count)) }
+            let totalText = textLengths.reduce(0, +)
+            let rangeDuration = range.end - range.start
+
+            // Estimate total needed duration based on text length
+            let estimatedDurations = rangeIndices.map { estimateLyricDuration(textLength: blocks[$0].japanese.count) }
+            let totalEstimated = estimatedDurations.reduce(0, +)
+
+            if totalEstimated < rangeDuration * 0.85 {
+                // Blocks need less time than available — use estimated durations
+                // and distribute start positions proportionally within the range
+                let spacing = (rangeDuration - totalEstimated) / Double(blocksInRange + 1)
+                var cursor = range.start + spacing
+                for (j, idx) in rangeIndices.enumerated() {
+                    let dur = estimatedDurations[j - rangeIndices.lowerBound]
+                    blocks[idx].startTime = cursor
+                    blocks[idx].endTime = cursor + dur
+                    blocks[idx].confidence = confidence
+                    cursor += dur + spacing
+                }
+            } else {
+                // Blocks need most/all of the available time — distribute proportionally
+                // but still leave small gaps between blocks
+                let gapPerBlock = min(0.3, rangeDuration * 0.02)
+                let totalGaps = gapPerBlock * Double(max(0, blocksInRange - 1))
+                let usableDuration = rangeDuration - totalGaps
+
+                var cursor = range.start
+                for (j, idx) in rangeIndices.enumerated() {
+                    let proportion = textLengths[j - rangeIndices.lowerBound] / totalText
+                    let blockDuration = usableDuration * proportion
+                    blocks[idx].startTime = cursor
+                    blocks[idx].endTime = cursor + blockDuration
+                    blocks[idx].confidence = confidence
+                    cursor += blockDuration + gapPerBlock
+                }
+            }
+
+            blockOffset += blocksInRange
+        }
+
+        if ranges.count > 1 {
+            let gaps = ranges.count - 1
+            print("[Alignment] Distributed \(count) blocks across \(ranges.count) vocal ranges (skipped \(gaps) instrumental gap(s))")
+        }
+    }
+
     /// Interpolate timing for unmatched blocks using surrounding anchors.
     /// Uses proportional spacing based on text length.
+    /// Skips instrumental gaps (regions with no whisper segments) longer than 3s.
     /// Uses vocalOnset as the earliest valid start boundary (not 0:00).
-    private static func interpolateFromAnchors(_ blocks: inout [LyricBlock], totalDuration: Double, vocalOnset: Double) {
+    private static func interpolateFromAnchors(_ blocks: inout [LyricBlock], segments: [WhisperSegment], totalDuration: Double, vocalOnset: Double) {
         guard !blocks.isEmpty else { return }
 
         var i = 0
@@ -698,8 +889,6 @@ enum WhisperAlignmentService {
             if i > 0, let prevEnd = blocks[i - 1].endTime {
                 startBound = prevEnd
             } else {
-                // CRITICAL FIX: Use vocal onset, not 0:00.
-                // This prevents unmatched early blocks from being pinned to the intro.
                 startBound = vocalOnset
                 print("[Alignment] Interpolating leading blocks from vocal onset \(String(format: "%.2f", vocalOnset))s (not 0:00)")
             }
@@ -711,32 +900,13 @@ enum WhisperAlignmentService {
                 endBound = totalDuration
             }
 
-            let runLength = runEnd - i
-            let availableDuration = endBound - startBound
-
-            let textLengths = (i..<runEnd).map { Double(blocks[$0].japanese.count) }
-            let totalTextLength = textLengths.reduce(0, +)
-
-            if totalTextLength > 0 && availableDuration > 0 {
-                var cursor = startBound
-                for j in 0..<runLength {
-                    let idx = i + j
-                    let proportion = textLengths[j] / totalTextLength
-                    let blockDuration = availableDuration * proportion
-                    blocks[idx].startTime = cursor
-                    blocks[idx].endTime = cursor + blockDuration
-                    blocks[idx].confidence = 0.05
-                    cursor += blockDuration
-                }
-            } else {
-                let blockDuration = availableDuration / Double(max(runLength, 1))
-                for j in 0..<runLength {
-                    let idx = i + j
-                    blocks[idx].startTime = startBound + Double(j) * blockDuration
-                    blocks[idx].endTime = startBound + Double(j + 1) * blockDuration
-                    blocks[idx].confidence = 0.05
-                }
-            }
+            distributeBlocksIntoVocalRanges(
+                blocks: &blocks,
+                indices: i..<runEnd,
+                segments: segments,
+                startBound: startBound,
+                endBound: endBound
+            )
 
             i = runEnd
         }
@@ -981,6 +1151,83 @@ enum WhisperAlignmentService {
     // MARK: - Boundary Snap
 
     /// Snap block boundaries to nearest whisper segment edges.
+    /// Tighten block timing so each lyric line only displays for a reasonable duration.
+    ///
+    /// Problem: Whisper sentence-level segments can be very long (20s+) when they
+    /// span across instrumental sections. A block matched to such a segment gets
+    /// startTime/endTime covering the full segment, making the lyric visible during
+    /// the instrumental gap.
+    ///
+    /// Strategy: For each contiguous run of blocks, estimate per-block display
+    /// durations from text length, then assign each block a tight time window
+    /// within its original allocation — preserving gaps where singing stops.
+    private static func capOverlongBlocks(
+        _ blocks: inout [LyricBlock],
+        segments: [WhisperSegment]
+    ) {
+        guard !blocks.isEmpty else { return }
+
+        // Process each block individually
+        for i in 0..<blocks.count {
+            guard !blocks[i].isManuallyAdjusted else { continue }
+            guard let start = blocks[i].startTime, let end = blocks[i].endTime else { continue }
+
+            let duration = end - start
+            let textLen = blocks[i].japanese.count
+
+            // Estimate reasonable display time: ~3.5 chars/sec + 1.5s buffer, min 2.5s
+            let estimatedDuration = max(2.5, Double(textLen) / 3.5 + 1.5)
+
+            // Only process if block is significantly longer than needed
+            guard duration > estimatedDuration * 1.3 else { continue }
+
+            // Determine where within this block's time range the singing likely happens.
+            // Look at the next block's start to figure out the structure.
+            let nextStart = (i + 1 < blocks.count) ? blocks[i + 1].startTime : nil
+
+            // Determine the singing position within this time range:
+            // The lyric is probably sung near the START of its time range
+            // (the tail is usually the instrumental gap before the next lyric).
+            var newEnd = start + estimatedDuration
+
+            // Use whisper segments to refine: find where speech actually ends
+            // within this block's time range
+            let overlapping = segments.filter { seg in
+                seg.endTime > start && seg.startTime < end
+            }
+
+            if overlapping.count >= 2 {
+                // Multiple segments within this block's range — find where a gap occurs
+                // after the singing part that matches this lyric
+                var speechEnd = overlapping[0].endTime
+                for seg in overlapping.dropFirst() {
+                    if seg.startTime - speechEnd > 2.0 {
+                        // Found a gap > 2s — singing likely stopped at speechEnd
+                        break
+                    }
+                    speechEnd = seg.endTime
+                }
+                // Use the speech-end if it gives a reasonable duration
+                let speechDuration = speechEnd - start
+                if speechDuration >= 2.0 && speechDuration < duration * 0.8 {
+                    newEnd = speechEnd
+                }
+            }
+
+            // Don't overlap with next block
+            if let ns = nextStart, newEnd > ns {
+                newEnd = ns
+            }
+
+            // Only apply if we're meaningfully shortening
+            if newEnd < end - 0.5 && newEnd > start + 1.0 {
+                print(String(format: "[CapOverlong] Block %d: %.2f–%.2f (%.1fs) → %.2f–%.2f (%.1fs) [%d chars]",
+                             i, start, end, duration, start, newEnd, newEnd - start, textLen))
+                blocks[i].endTime = newEnd
+            }
+        }
+    }
+
     /// This is a safe post-processing step that aligns start/end times
     /// to actual speech onset/offset detected by whisper, improving
     /// subtitle timing without changing which segment was matched.
@@ -1050,6 +1297,8 @@ enum WhisperAlignmentService {
 
     private static func printAlignmentReport(_ blocks: [LyricBlock]) {
         print("\n=== ALIGNMENT REPORT ===")
+        var gapCount = 0
+        var totalGapDuration = 0.0
         for (i, block) in blocks.enumerated() {
             let conf = block.confidence ?? 0
             let flag: String
@@ -1066,10 +1315,54 @@ enum WhisperAlignmentService {
                 timeStr = "   -.--–   -.--"
             }
 
+            // Detect gap from previous block
+            if i > 0, let prevEnd = blocks[i - 1].endTime, let curStart = block.startTime {
+                let gap = curStart - prevEnd
+                if gap > 0.5 {
+                    gapCount += 1
+                    totalGapDuration += gap
+                    print(String(format: "     ⏸ GAP %.2fs (no subtitle)", gap))
+                }
+            }
+
             let jaPreview = String(block.japanese.prefix(20))
             print(String(format: "[%2d] %@ conf=%.2f %@ %@", i, flag, conf, timeStr, jaPreview))
         }
+        if gapCount > 0 {
+            print(String(format: "[Alignment] %d gap(s) detected (total %.1fs of no-subtitle time)", gapCount, totalGapDuration))
+        }
         print("=== END REPORT ===\n")
+
+        // Also write report to a file for debugging
+        var reportLines: [String] = ["=== ALIGNMENT REPORT ==="]
+        for (i, block) in blocks.enumerated() {
+            let conf = block.confidence ?? 0
+            let flag: String
+            if block.isManuallyAdjusted { flag = "MANUAL" }
+            else if block.isAnchor { flag = "ANCHOR" }
+            else if conf < 0.1 { flag = "INTERP" }
+            else if conf < 0.4 { flag = "  WEAK" }
+            else { flag = "    OK" }
+            let timeStr: String
+            if let s = block.startTime, let e = block.endTime {
+                timeStr = String(format: "%6.2f–%6.2f (dur=%.2f)", s, e, e - s)
+            } else {
+                timeStr = "   -.--–   -.-- (no timing)"
+            }
+            if i > 0, let prevEnd = blocks[i - 1].endTime, let curStart = block.startTime {
+                let gap = curStart - prevEnd
+                if gap > 0.5 {
+                    reportLines.append(String(format: "     ⏸ GAP %.2fs (no subtitle)", gap))
+                } else if gap < -0.01 {
+                    reportLines.append(String(format: "     ⚠ OVERLAP %.2fs", -gap))
+                }
+            }
+            let jaPreview = String(block.japanese.prefix(30))
+            reportLines.append(String(format: "[%2d] %@ conf=%.2f %@ %@", i, flag, conf, timeStr, jaPreview))
+        }
+        reportLines.append("=== END REPORT ===")
+        let reportText = reportLines.joined(separator: "\n")
+        try? reportText.write(toFile: "/tmp/mreels_alignment_report.txt", atomically: true, encoding: .utf8)
     }
 
     // MARK: - Parsing
