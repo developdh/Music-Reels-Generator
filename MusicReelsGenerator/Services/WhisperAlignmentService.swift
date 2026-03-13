@@ -833,7 +833,7 @@ enum WhisperAlignmentService {
                 let spacing = (rangeDuration - totalEstimated) / Double(blocksInRange + 1)
                 var cursor = range.start + spacing
                 for (j, idx) in rangeIndices.enumerated() {
-                    let dur = estimatedDurations[j - rangeIndices.lowerBound]
+                    let dur = estimatedDurations[j]
                     blocks[idx].startTime = cursor
                     blocks[idx].endTime = cursor + dur
                     blocks[idx].confidence = confidence
@@ -848,7 +848,7 @@ enum WhisperAlignmentService {
 
                 var cursor = range.start
                 for (j, idx) in rangeIndices.enumerated() {
-                    let proportion = textLengths[j - rangeIndices.lowerBound] / totalText
+                    let proportion = textLengths[j] / totalText
                     let blockDuration = usableDuration * proportion
                     blocks[idx].startTime = cursor
                     blocks[idx].endTime = cursor + blockDuration
