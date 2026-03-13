@@ -140,10 +140,11 @@ struct CroppedVideoPreview: View {
         let targetW = previewSize.width
         let targetH = previewSize.height
 
-        // Scale to fill (cover): use the larger scale factor
+        // Scale to fill (cover): use the larger scale factor, then apply zoom
         let scaleX = targetW / srcW
         let scaleY = targetH / srcH
-        let scale = max(scaleX, scaleY)
+        let zoom = CGFloat(cropSettings.zoomScale)
+        let scale = max(scaleX, scaleY) * zoom
 
         let scaledW = srcW * scale
         let scaledH = srcH * scale

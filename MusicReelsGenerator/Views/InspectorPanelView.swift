@@ -293,6 +293,32 @@ struct CropInspectorView: View {
                 }
             }
 
+            GroupBox("Zoom") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("1x")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Slider(value: $vm.project.cropSettings.zoomScale, in: 1.0...3.0, step: 0.05)
+                            .onChange(of: vm.project.cropSettings.zoomScale) { _, _ in
+                                vm.isDirty = true
+                            }
+                        Text("\(String(format: "%.1f", vm.project.cropSettings.zoomScale))x")
+                            .font(.caption)
+                            .monospacedDigit()
+                            .frame(width: 30)
+                    }
+
+                    if vm.project.cropSettings.zoomScale > 1.0 {
+                        Button("Reset Zoom") {
+                            vm.project.cropSettings.zoomScale = 1.0
+                            vm.isDirty = true
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+
             GroupBox("Output") {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Resolution: \(vm.project.cropSettings.outputWidth)x\(vm.project.cropSettings.outputHeight)")

@@ -77,7 +77,8 @@ class ExportService {
         let sourceH = Double(meta.height)
         let targetW = Double(outW)
         let targetH = Double(outH)
-        let scaleFactor = max(targetW / sourceW, targetH / sourceH)
+        let zoom = crop.zoomScale
+        let scaleFactor = max(targetW / sourceW, targetH / sourceH) * zoom
         let scaledW = Int((sourceW * scaleFactor).rounded(.up))
         let scaledH = Int((sourceH * scaleFactor).rounded(.up))
         let evenScaledW = scaledW + (scaledW % 2)

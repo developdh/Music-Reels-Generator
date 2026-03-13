@@ -97,7 +97,7 @@ class ProjectViewModel: ObservableObject {
         try? FileManager.default.createDirectory(at: downloadDir, withIntermediateDirectories: true)
 
         do {
-            let fileURL = try await provider.download(
+            let tempFileURL = try await provider.download(
                 url: urlString,
                 to: downloadDir
             ) { [weak self] state in
@@ -106,9 +106,21 @@ class ProjectViewModel: ObservableObject {
                 }
             }
 
+            // Move from temp to persistent storage (Application Support)
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let videosDir = appSupport.appendingPathComponent("MusicReelsGenerator/Videos", isDirectory: true)
+            try? FileManager.default.createDirectory(at: videosDir, withIntermediateDirectories: true)
+
+            let permanentURL = videosDir.appendingPathComponent(tempFileURL.lastPathComponent)
+            // Remove existing file with same name if any
+            try? FileManager.default.removeItem(at: permanentURL)
+            try FileManager.default.moveItem(at: tempFileURL, to: permanentURL)
+            // Clean up temp download directory
+            try? FileManager.default.removeItem(at: downloadDir)
+
             showURLImportSheet = false
             youtubeDownloadState = .idle
-            await importVideo(url: fileURL)
+            await importVideo(url: permanentURL)
         } catch {
             youtubeDownloadState = .failed(error.localizedDescription)
         }
