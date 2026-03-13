@@ -13,6 +13,12 @@ struct ToolbarView: View {
                 Label("Import Video", systemImage: "film.fill")
             }
 
+            Button {
+                vm.showURLImportSheet = true
+            } label: {
+                Label("URL Import", systemImage: "link.badge.plus")
+            }
+
             Divider().frame(height: 20)
 
             // Alignment quality mode

@@ -35,6 +35,10 @@ class ProjectViewModel: ObservableObject {
     // MARK: - Export State
     @Published var exportState: ExportState = .idle
 
+    // MARK: - URL Import State
+    @Published var showURLImportSheet: Bool = false
+    @Published var youtubeDownloadState: YouTubeDownloadState = .idle
+
     // MARK: - Tool Availability
     @Published var ffmpegAvailable: Bool = false
     @Published var whisperAvailable: Bool = false
@@ -78,6 +82,37 @@ class ProjectViewModel: ObservableObject {
     }
 
     // MARK: - Video Import
+
+    // MARK: - URL Download & Import
+
+    func downloadFromURL(_ urlString: String) async {
+        let provider = YouTubeDownloadRegistry.provider
+        guard provider.isEnabled else {
+            showError("이 기능은 현재 비활성화 상태입니다.")
+            return
+        }
+
+        let downloadDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ytdlp_\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: downloadDir, withIntermediateDirectories: true)
+
+        do {
+            let fileURL = try await provider.download(
+                url: urlString,
+                to: downloadDir
+            ) { [weak self] state in
+                Task { @MainActor in
+                    self?.youtubeDownloadState = state
+                }
+            }
+
+            showURLImportSheet = false
+            youtubeDownloadState = .idle
+            await importVideo(url: fileURL)
+        } catch {
+            youtubeDownloadState = .failed(error.localizedDescription)
+        }
+    }
 
     func importVideo(url: URL) async {
         do {

@@ -44,5 +44,9 @@ struct ContentView: View {
         } message: {
             Text(vm.errorMessage ?? "Unknown error")
         }
+        .sheet(isPresented: $vm.showURLImportSheet) {
+            URLImportSheet()
+                .environmentObject(vm)
+        }
     }
 }

@@ -9,6 +9,12 @@ xcuserdata/
 *.swp
 *~
 
+# Private features (not for public distribution)
+MusicReelsGenerator/Services/YouTubeDownloadProvider_Real.swift
+
+# Python cache
+Scripts/__pycache__/
+
 # Xcode
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
