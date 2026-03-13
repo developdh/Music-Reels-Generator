@@ -1,6 +1,33 @@
-# Music Reels Generator
+<div align="center">
 
-A macOS desktop app for generating vertical music lyric videos (Reels / Shorts) from an existing music video file and bilingual (Japanese + Korean) lyrics.
+# 🎬 Music Reels Generator
+
+<p>
+  <a href="https://developer.apple.com/macos/"><img src="https://img.shields.io/badge/platform-macOS_14.0+-blue?style=for-the-badge&logo=apple&logoColor=white" alt="Platform"></a>
+  <a href="https://github.com/developdh/Music-Reels-Generator/releases"><img src="https://img.shields.io/github/v/release/developdh/Music-Reels-Generator?style=for-the-badge&color=green" alt="Release"></a>
+  <a href="https://github.com/developdh/Music-Reels-Generator/blob/main/LICENSE"><img src="https://img.shields.io/github/license/developdh/Music-Reels-Generator?style=for-the-badge" alt="License"></a>
+  <img src="https://img.shields.io/github/repo-size/developdh/Music-Reels-Generator?style=for-the-badge&color=orange" alt="Repo Size">
+</p>
+
+<p>
+  <a href="https://skillicons.dev">
+    <img src="https://skillicons.dev/icons?i=swift,apple,python,git,github&theme=dark" alt="Tech Stack">
+  </a>
+</p>
+
+<p><strong>A macOS desktop app for generating vertical music lyric videos (Reels / Shorts) from an existing music video file and bilingual (Japanese + Korean) lyrics.</strong></p>
+
+<p>
+  <img src="https://img.shields.io/badge/Swift-5.9+-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift">
+  <img src="https://img.shields.io/badge/SwiftUI-Framework-007AFF?style=flat-square&logo=swift&logoColor=white" alt="SwiftUI">
+  <img src="https://img.shields.io/badge/AVFoundation-Media-8B5CF6?style=flat-square&logo=apple&logoColor=white" alt="AVFoundation">
+  <img src="https://img.shields.io/badge/FFmpeg-CLI-007808?style=flat-square&logo=ffmpeg&logoColor=white" alt="FFmpeg">
+  <img src="https://img.shields.io/badge/whisper.cpp-AI-4B5563?style=flat-square" alt="whisper.cpp">
+</p>
+
+</div>
+
+---
 
 An example source video (`GreenlightsSerenade3.mp4`) is included in the repository for testing.
 
