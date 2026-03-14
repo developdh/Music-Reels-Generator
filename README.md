@@ -44,8 +44,8 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 - **Piecewise Anchor Correction** — Distributes timing proportionally between trusted anchor pairs (user-set or both start/end manually adjusted) by Japanese text character count. Runs automatically after alignment if user anchors exist. Also available as manual "전체 구간 재보정" and "이전앵커~다음앵커 재보정" operations
 - **Local Re-Alignment** — Re-runs whisper-cpp alignment on a bounded region between surrounding anchors using cached transcription segments, without re-transcribing the full audio
 - **Manual Timing Correction** — Set start/end times from playback position, shift all following blocks by a delta, fine-grained nudge (+-0.1s / +-0.5s), keyboard shortcuts (Cmd+[ / Cmd+]). Granular tracking of which boundary (start/end) was manually adjusted
-- **Video Trimming** — Non-destructive trim in/out to cut intros, outros, or shorten the final reel. Trim range is enforced in preview playback (auto-stop at trim end, loop to trim start on play) and applied during export via FFmpeg seek
-- **Vertical Reframing** — Crop any aspect ratio video to 9:16 with adjustable horizontal and vertical offset sliders. Cover-mode scaling ensures no black bars
+- **Video Trimming** — Non-destructive trim in/out to cut intros, outros, or shorten the final reel. Draggable start/end handles on the trim bar for quick visual adjustment, plus precise numeric controls. Trim range is enforced in preview playback (auto-stop at trim end, loop to trim start on play) and applied during export via FFmpeg seek
+- **Vertical Reframing** — Crop any aspect ratio video to 9:16 with adjustable horizontal and vertical offset sliders plus 1x–3x zoom slider. Cover-mode scaling ensures no black bars
 - **Subtitle Styling** — Independent Japanese/Korean font family selection (with recommended CJK fonts: Hiragino Sans, Apple SD Gothic Neo, etc.), font size (JP: 24–120, KR: 20–100), per-language text color with color pickers and 5 preset swatches, outline width (0–8 px), shadow toggle, bottom margin (50–960, up to screen center), line spacing
 - **Metadata Overlay** — Optional top-left title/artist overlay with dark rounded background box. Independent font, size, and color controls for title and artist. Configurable background opacity, corner radius, padding, and position margins
 - **Style Presets** — Save, load, rename, duplicate, and delete reusable style presets (subtitle + overlay styling). Presets persist in Application Support and are reusable across all projects. Presets capture visual styling only, excluding song-specific text content (title/artist text)
@@ -178,15 +178,16 @@ The **Recommended** mode is selected by default and consistently produces the be
 **Recommended mode pipeline:**
 1. Extract audio as 16kHz mono WAV (FFmpeg)
 2. Transcribe with whisper-cpp (`--output-csv`, sentence-level segments)
-3. Merge short fragments (<0.3s)
+3. Merge short fragments (<0.3s), filtering non-speech segments (`(拍手)`, `(音楽)`, `[Music]`, etc.)
 4. Detect vocal onset from first speech segment
-5. Position-aware candidate generation with windowed search (30s radius)
-6. Monotonic beam-search DP assignment (beam width 80)
+5. Position-aware candidate generation with windowed search (30s radius), skipping non-speech segments
+6. Monotonic beam-search DP assignment (beam width 80), preventing combination of speech + non-speech segments
 7. Multi-pass refinement of low-confidence regions between anchors
 8. Drift detection — identifies runs of 3+ weak blocks with systematic positional shift and re-anchors them
-9. Anchor-based proportional interpolation (by kana character count, starting from vocal onset)
-10. Boundary snap — snaps block edges to nearest whisper segment boundaries (within 0.3s)
-11. Auto-correct between user anchors (if ≥ 2 exist) — piecewise proportional redistribution
+9. Vocal range-aware interpolation — detects speech vs. instrumental ranges from whisper segments, distributes unmatched blocks only into vocal regions (proportional to Japanese text character count)
+10. Overlong block capping — trims blocks whose duration far exceeds their text length (~3.5 chars/sec + 1.5s buffer) to prevent subtitles lingering through instrumental gaps
+11. Boundary snap — snaps block edges to nearest whisper segment boundaries (within 0.3s)
+12. Auto-correct between user anchors (if ≥ 2 exist) — piecewise proportional redistribution
 
 **Experimental Python pipeline (Exp modes):**
 1. Extract audio as 16kHz mono WAV (FFmpeg)
@@ -214,6 +215,7 @@ The **Recommended** mode is selected by default and consistently produces the be
 ### 5. Trim Video
 
 In the Inspector > Trim tab:
+- **Draggable trim handles** — Drag the green (start) or red (end) handle on the trim bar to visually adjust the trim range
 - Set trim start and end times using "Set to Current" or +-0.1s / +-1s nudge buttons
 - The trim bar shows a visual overview of the selected range (accent color indicator under scrubber)
 - Playback respects the trim range: stops at trim end, loops to trim start when pressing play at the end
@@ -225,7 +227,8 @@ In the Inspector > Trim tab:
 In the Inspector > Crop tab:
 - Adjust the horizontal offset slider (L-R) to position the vertical crop window
 - Adjust the vertical offset slider (T-B) for vertical positioning
-- Click "Center H" / "Center V" to reset
+- Adjust the zoom slider (1x–3x) to zoom into the source video before cropping
+- Click "Center H" / "Center V" to reset offsets, "Reset Zoom" to return to 1x
 - The preview shows the 9:16 frame in real-time with cover-mode scaling
 
 ### 7. Style Subtitles
@@ -299,7 +302,7 @@ MusicReelsGenerator/
 │   ├── Project                    # Root aggregate: video, metadata, blocks, styles, trim, overlay
 │   ├── LyricBlock                 # JP+KR text, timing, confidence, isAnchor/isUserAnchor, manual flags
 │   ├── VideoMetadata              # Dimensions, duration, FPS, file size, aspect ratio detection
-│   ├── CropSettings               # 9:16 crop mode, H/V offsets (-1..1), output resolution (1080x1920)
+│   ├── CropSettings               # 9:16 crop mode, H/V offsets (-1..1), zoom (1x-3x), output resolution (1080x1920)
 │   ├── TrimSettings               # Trim in/out times, clamping, validation, duration
 │   ├── SubtitleStyle              # Per-language fonts/sizes/colors (hex), outline, shadow, margins
 │   ├── MetadataOverlaySettings    # Title/artist text, fonts, colors, background box, position/padding
@@ -350,23 +353,27 @@ The production alignment engine uses whisper-cpp for segment-level alignment wit
 
 1. **Transcription** — whisper-cpp transcribes audio into sentence-level segments (~20–30 per song) with start/end timestamps via `--output-csv`
 
-2. **Fragment Merging** — Very short segments (<0.3s) are merged with adjacent segments to reduce noise
+2. **Non-Speech Filtering** — Segments containing non-speech markers (`(拍手)`, `(音楽)`, `[Music]`, `[Applause]`, etc.) are identified and excluded from matching candidates. Fragment merging never combines speech with non-speech segments. This prevents instrumental/applause markers from polluting lyric timing
 
-3. **Vocal Onset Detection** — The first whisper segment's start time establishes the vocal onset boundary, preventing intro regions from attracting lyrics
+3. **Fragment Merging** — Very short segments (<0.3s) are merged with adjacent segments to reduce noise, respecting non-speech boundaries
 
-4. **Position-Aware Candidate Generation** — For each lyric block, candidates are generated from segments within a 30s temporal search window around the expected position. Text similarity is scored via Levenshtein distance and LCS containment. Position is scored via Gaussian falloff from expected time. Combined score = textScore x 0.65 + positionScore x 0.35
+4. **Vocal Onset Detection** — The first whisper segment's start time establishes the vocal onset boundary, preventing intro regions from attracting lyrics
 
-5. **Monotonic Beam-Search DP** — Forward beam search (width 80) finds the globally optimal assignment of segments to blocks under strict monotonic constraint (segment indices must increase). Each block can be matched or skipped. Temporal continuity bonuses reward reasonable time gaps between consecutive matches
+5. **Position-Aware Candidate Generation** — For each lyric block, candidates are generated from segments within a 30s temporal search window around the expected position. Non-speech segments are skipped as starting points, and candidate combination stops at non-speech boundaries. Text similarity is scored via Levenshtein distance and LCS containment. Position is scored via Gaussian falloff from expected time. Combined score = textScore x 0.65 + positionScore x 0.35
 
-6. **Multi-Pass Refinement** — After the initial DP pass, low-confidence regions between anchors are re-aligned locally with tighter constraints and lower match thresholds (2 refinement passes)
+6. **Monotonic Beam-Search DP** — Forward beam search (width 80) finds the globally optimal assignment of segments to blocks under strict monotonic constraint (segment indices must increase). Each block can be matched or skipped. Temporal continuity bonuses reward reasonable time gaps between consecutive matches
 
-7. **Drift Detection & Correction** — Scans for runs of 3+ consecutive weak blocks with consistent positional offset (>2s in the same direction). Detected drift regions are re-anchored against local segments, with results applied only if confidence improves
+7. **Multi-Pass Refinement** — After the initial DP pass, low-confidence regions between anchors are re-aligned locally with tighter constraints and lower match thresholds (2 refinement passes)
 
-8. **Anchor-Based Proportional Interpolation** — Unmatched blocks between anchors receive timing proportional to their Japanese text character count. Uses vocal onset (not 0:00) as the earliest valid start boundary
+8. **Drift Detection & Correction** — Scans for runs of 3+ consecutive weak blocks with consistent positional offset (>2s in the same direction). Detected drift regions are re-anchored against local segments, with results applied only if confidence improves
 
-9. **Boundary Snap** — Snaps block start/end times to the nearest whisper segment edge within 0.3s, aligning subtitle timing to actual speech onset/offset without changing which segment was matched
+9. **Vocal Range-Aware Interpolation** — Detects vocal vs. instrumental time ranges from whisper segments. Unmatched blocks between anchors are distributed only into vocal ranges, with timing proportional to Japanese text character count. Blocks in purely instrumental gaps receive no timing, preventing subtitles from appearing during interludes
 
-10. **Auto-Correction** — If user anchors (≥ 2) exist, automatically runs piecewise proportional redistribution between user anchor pairs after alignment completes
+10. **Overlong Block Capping** — Post-processing step that trims blocks whose duration far exceeds their text length (~3.5 characters/second + 1.5s buffer). This prevents subtitles from lingering through instrumental sections when the alignment assigns overly long segments
+
+11. **Boundary Snap** — Snaps block start/end times to the nearest whisper segment edge within 0.3s, aligning subtitle timing to actual speech onset/offset without changing which segment was matched
+
+12. **Auto-Correction** — If user anchors (≥ 2) exist, automatically runs piecewise proportional redistribution between user anchor pairs after alignment completes
 
 ### Anchor System
 
@@ -445,7 +452,7 @@ Projects are saved as `.mreels` files (JSON with ISO 8601 dates, pretty-printed,
 - Project title, UUID, created/updated timestamps
 - Source video path and cached metadata (width, height, duration, FPS, file size)
 - Trim settings (start/end times)
-- Crop settings (mode, horizontal/vertical offset, output resolution)
+- Crop settings (mode, horizontal/vertical offset, zoom level, output resolution)
 - Subtitle style (per-language font families, sizes, text colors as hex, outline color/width, shadow, bottom margin, line spacing)
 - Metadata overlay settings (enabled flag, title/artist text, fonts, colors, background box opacity/radius, position margins, padding, line spacing)
 - All lyric blocks with: UUID, Japanese/Korean text, start/end times, confidence score, manual adjustment flags (per-boundary), isAnchor, isUserAnchor
