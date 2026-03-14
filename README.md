@@ -471,3 +471,7 @@ Backward compatibility: older project files without `trimSettings`, `isAnchor`, 
 - Whisper models are downloaded on first use (~1.5 GB for medium, ~3 GB for large-v3)
 - No cloud sync or multi-device support
 - Development build only (not packaged for App Store, no app sandbox)
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
