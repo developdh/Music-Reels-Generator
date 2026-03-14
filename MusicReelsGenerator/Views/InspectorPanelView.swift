@@ -695,9 +695,9 @@ struct TrimInspectorView: View {
                     .font(.caption)
                 }
 
-                // Trim bar visualization
+                // Trim bar visualization (drag green/red handles to adjust)
                 TrimBarView()
-                    .frame(height: 32)
+                    .frame(height: 36)
                     .padding(.top, 4)
 
                 // Reset
@@ -710,9 +710,11 @@ struct TrimInspectorView: View {
     }
 }
 
-/// A simple visual trim bar showing the selected range
+/// Interactive trim bar with draggable start/end handles
 struct TrimBarView: View {
     @EnvironmentObject var vm: ProjectViewModel
+    private let handleWidth: CGFloat = 10
+    private let handleHeight: CGFloat = 32
 
     var body: some View {
         GeometryReader { geo in
@@ -744,25 +746,60 @@ struct TrimBarView: View {
                     .frame(width: max(0, w * (endFrac - startFrac)))
                     .offset(x: w * startFrac)
 
-                // Trim start marker
-                Rectangle()
-                    .fill(Color.green)
-                    .frame(width: 2)
-                    .offset(x: w * startFrac)
-
-                // Trim end marker
-                Rectangle()
-                    .fill(Color.red)
-                    .frame(width: 2)
-                    .offset(x: max(0, w * endFrac - 2))
-
                 // Playhead
                 Rectangle()
                     .fill(Color.white)
                     .frame(width: 1.5)
                     .offset(x: w * playFrac)
+
+                // Draggable start handle
+                TrimHandle(color: .green)
+                    .offset(x: w * startFrac - handleWidth / 2)
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                let frac = max(0, min(value.location.x / w, 1))
+                                vm.setTrimStart(to: frac * dur)
+                            }
+                    )
+
+                // Draggable end handle
+                TrimHandle(color: .red)
+                    .offset(x: w * endFrac - handleWidth / 2)
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                let frac = max(0, min(value.location.x / w, 1))
+                                vm.setTrimEnd(to: frac * dur)
+                            }
+                    )
             }
             .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+    }
+}
+
+/// A draggable handle for the trim bar
+struct TrimHandle: View {
+    let color: Color
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(color)
+            .frame(width: 10, height: 32)
+            .overlay(
+                RoundedRectangle(cornerRadius: 2)
+                    .stroke(color.opacity(0.8), lineWidth: 1)
+            )
+            .contentShape(Rectangle().inset(by: -8))
+            .cursor(.resizeLeftRight)
+    }
+}
+
+extension View {
+    func cursor(_ cursor: NSCursor) -> some View {
+        self.onHover { inside in
+            if inside { cursor.push() } else { NSCursor.pop() }
         }
     }
 }
