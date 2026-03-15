@@ -10,6 +10,7 @@ struct InspectorPanelView: View {
         case crop = "Crop"
         case style = "Style"
         case overlay = "Overlay"
+        case ignore = "Ignore"
         case info = "Info"
     }
 
@@ -38,6 +39,8 @@ struct InspectorPanelView: View {
                         StyleInspectorView()
                     case .overlay:
                         MetadataOverlayInspectorView()
+                    case .ignore:
+                        IgnoreRegionsInspectorView()
                     case .info:
                         InfoInspectorView()
                     }
@@ -1182,5 +1185,147 @@ struct PresetRow: View {
             }
         }
         .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Ignore Regions Inspector
+
+struct IgnoreRegionsInspectorView: View {
+    @EnvironmentObject var vm: ProjectViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("무시 구간")
+                .font(.headline)
+
+            Text("음성 인식에서 제외할 구간을 설정합니다.\n(MC 멘트, 관객 대화 등)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            // Add button
+            Button {
+                vm.addIgnoreRegionAtCurrentTime()
+            } label: {
+                Label("현재 위치에 무시 구간 추가", systemImage: "plus.circle")
+            }
+            .controlSize(.small)
+            .disabled(!vm.project.hasVideo)
+
+            if vm.project.ignoreRegions.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "speaker.slash")
+                        .font(.title)
+                        .foregroundColor(.secondary)
+                    Text("설정된 무시 구간이 없습니다")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            } else {
+                ForEach(vm.project.ignoreRegions) { region in
+                    IgnoreRegionRowView(region: region)
+                }
+            }
+        }
+    }
+}
+
+struct IgnoreRegionRowView: View {
+    @EnvironmentObject var vm: ProjectViewModel
+    let region: IgnoreRegion
+    @State private var editingLabel: String = ""
+    @State private var isEditingLabel: Bool = false
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                // Header with label and delete
+                HStack {
+                    if isEditingLabel {
+                        TextField("라벨", text: $editingLabel, onCommit: {
+                            vm.updateIgnoreRegion(id: region.id, label: editingLabel)
+                            isEditingLabel = false
+                        })
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+                    } else {
+                        Text(region.label.isEmpty ? "무시 구간" : region.label)
+                            .font(.caption.bold())
+                            .onTapGesture {
+                                editingLabel = region.label
+                                isEditingLabel = true
+                            }
+                    }
+                    Spacer()
+                    Button {
+                        vm.removeIgnoreRegion(id: region.id)
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                }
+
+                // Start time
+                HStack {
+                    Text("시작")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 30, alignment: .leading)
+                    Text(TimeFormatter.format(region.startTime))
+                        .monospacedDigit()
+                        .font(.caption)
+                    Spacer()
+                    Button("현재") {
+                        vm.updateIgnoreRegion(id: region.id, startTime: vm.currentTime)
+                    }
+                    .controlSize(.mini)
+                    HStack(spacing: 2) {
+                        Button("-1s") { vm.updateIgnoreRegion(id: region.id, startTime: region.startTime - 1) }
+                        Button("-0.1") { vm.updateIgnoreRegion(id: region.id, startTime: region.startTime - 0.1) }
+                        Button("+0.1") { vm.updateIgnoreRegion(id: region.id, startTime: region.startTime + 0.1) }
+                        Button("+1s") { vm.updateIgnoreRegion(id: region.id, startTime: region.startTime + 1) }
+                    }
+                    .controlSize(.mini)
+                }
+
+                // End time
+                HStack {
+                    Text("종료")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 30, alignment: .leading)
+                    Text(TimeFormatter.format(region.endTime))
+                        .monospacedDigit()
+                        .font(.caption)
+                    Spacer()
+                    Button("현재") {
+                        vm.updateIgnoreRegion(id: region.id, endTime: vm.currentTime)
+                    }
+                    .controlSize(.mini)
+                    HStack(spacing: 2) {
+                        Button("-1s") { vm.updateIgnoreRegion(id: region.id, endTime: region.endTime - 1) }
+                        Button("-0.1") { vm.updateIgnoreRegion(id: region.id, endTime: region.endTime - 0.1) }
+                        Button("+0.1") { vm.updateIgnoreRegion(id: region.id, endTime: region.endTime + 0.1) }
+                        Button("+1s") { vm.updateIgnoreRegion(id: region.id, endTime: region.endTime + 1) }
+                    }
+                    .controlSize(.mini)
+                }
+
+                // Duration display
+                HStack {
+                    Text("길이: \(TimeFormatter.formatMMSS(region.duration))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button("이 구간으로 이동") {
+                        vm.seek(to: region.startTime)
+                    }
+                    .controlSize(.mini)
+                }
+            }
+        }
     }
 }

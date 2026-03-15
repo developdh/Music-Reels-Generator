@@ -207,13 +207,29 @@ enum WhisperAlignmentService {
         return max(0, first.startTime - 0.5)
     }
 
+    /// Filter out whisper segments that overlap with ignore regions
+    static func filterIgnoredSegments(_ segments: [WhisperSegment], ignoreRegions: [IgnoreRegion]) -> [WhisperSegment] {
+        guard !ignoreRegions.isEmpty else { return segments }
+        return segments.filter { seg in
+            !ignoreRegions.contains { $0.overlaps(segmentStart: seg.startTime, segmentEnd: seg.endTime) }
+        }
+    }
+
     static func align(
         segments: [WhisperSegment],
         to blocks: [LyricBlock],
         mode: AlignmentQualityMode = .legacy,
+        ignoreRegions: [IgnoreRegion] = [],
         onProgress: ((String) -> Void)? = nil
     ) -> [LyricBlock] {
         guard !segments.isEmpty, !blocks.isEmpty else { return blocks }
+
+        // Filter out segments in ignore regions
+        let segments = filterIgnoredSegments(segments, ignoreRegions: ignoreRegions)
+        if segments.isEmpty { return blocks }
+        if !ignoreRegions.isEmpty {
+            print("[Alignment] Filtered segments: \(segments.count) remaining after \(ignoreRegions.count) ignore region(s)")
+        }
 
         let B = blocks.count
         let S = segments.count
@@ -934,14 +950,16 @@ enum WhisperAlignmentService {
         toIndex: Int,
         timeBefore: Double,
         timeAfter: Double,
-        mode: AlignmentQualityMode = .legacy
+        mode: AlignmentQualityMode = .legacy,
+        ignoreRegions: [IgnoreRegion] = []
     ) -> [LyricBlock] {
         guard fromIndex >= 0, toIndex < allBlocks.count, fromIndex <= toIndex else {
             return allBlocks
         }
 
-        // Filter segments to the time range
-        let regionSegments = segments.filter { seg in
+        // Filter segments to the time range, excluding ignore regions
+        let filteredSegments = filterIgnoredSegments(segments, ignoreRegions: ignoreRegions)
+        let regionSegments = filteredSegments.filter { seg in
             seg.startTime >= timeBefore - 1 && seg.endTime <= timeAfter + 1
         }
 

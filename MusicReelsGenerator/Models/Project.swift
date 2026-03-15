@@ -9,6 +9,7 @@ struct Project: Codable, Identifiable {
     var trimSettings: TrimSettings
     var subtitleStyle: SubtitleStyle
     var metadataOverlay: MetadataOverlaySettings
+    var ignoreRegions: [IgnoreRegion]
     var lyricBlocks: [LyricBlock]
     var createdAt: Date
     var updatedAt: Date
@@ -25,6 +26,7 @@ struct Project: Codable, Identifiable {
         self.trimSettings = TrimSettings()
         self.subtitleStyle = SubtitleStyle()
         self.metadataOverlay = MetadataOverlaySettings()
+        self.ignoreRegions = []
         self.lyricBlocks = []
         self.createdAt = Date()
         self.updatedAt = Date()
@@ -64,6 +66,8 @@ struct Project: Codable, Identifiable {
         subtitleStyle = try container.decode(SubtitleStyle.self, forKey: .subtitleStyle)
         metadataOverlay = try container.decodeIfPresent(MetadataOverlaySettings.self, forKey: .metadataOverlay)
             ?? MetadataOverlaySettings()
+        ignoreRegions = try container.decodeIfPresent([IgnoreRegion].self, forKey: .ignoreRegions)
+            ?? []
         lyricBlocks = try container.decode([LyricBlock].self, forKey: .lyricBlocks)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)

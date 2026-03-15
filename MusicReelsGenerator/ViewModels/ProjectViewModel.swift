@@ -348,6 +348,45 @@ class ProjectViewModel: ObservableObject {
         project.trimSettings.isActive(sourceDuration: duration)
     }
 
+    // MARK: - Ignore Regions
+
+    func addIgnoreRegion(startTime: Double, endTime: Double, label: String = "") {
+        let region = IgnoreRegion(startTime: startTime, endTime: endTime, label: label)
+        project.ignoreRegions.append(region)
+        project.ignoreRegions.sort { $0.startTime < $1.startTime }
+        project.touch()
+        isDirty = true
+        statusMessage = "무시 구간 추가됨: \(TimeFormatter.formatMMSS(startTime))–\(TimeFormatter.formatMMSS(endTime))"
+    }
+
+    func removeIgnoreRegion(id: UUID) {
+        project.ignoreRegions.removeAll { $0.id == id }
+        project.touch()
+        isDirty = true
+    }
+
+    func updateIgnoreRegion(id: UUID, startTime: Double? = nil, endTime: Double? = nil, label: String? = nil) {
+        guard let idx = project.ignoreRegions.firstIndex(where: { $0.id == id }) else { return }
+        if let st = startTime {
+            project.ignoreRegions[idx].startTime = max(0, min(st, project.ignoreRegions[idx].endTime - 0.1))
+        }
+        if let et = endTime {
+            project.ignoreRegions[idx].endTime = max(project.ignoreRegions[idx].startTime + 0.1, min(et, duration))
+        }
+        if let l = label {
+            project.ignoreRegions[idx].label = l
+        }
+        project.ignoreRegions.sort { $0.startTime < $1.startTime }
+        project.touch()
+        isDirty = true
+    }
+
+    func addIgnoreRegionAtCurrentTime() {
+        let start = currentTime
+        let end = min(currentTime + 10, duration)
+        addIgnoreRegion(startTime: start, endTime: end)
+    }
+
     // MARK: - Tool Availability (Advanced Pipeline)
 
     @Published var advancedPipelineAvailable: Bool = false
@@ -488,11 +527,12 @@ class ProjectViewModel: ObservableObject {
         // Use vocal-range-aware distribution if whisper segments are available
         if !cachedWhisperSegments.isEmpty {
             // Reindex middle blocks into a contiguous temp array, distribute, then write back
+            let filteredSegments = WhisperAlignmentService.filterIgnoredSegments(cachedWhisperSegments, ignoreRegions: project.ignoreRegions)
             var tempBlocks = middleIndices.map { project.lyricBlocks[$0] }
             WhisperAlignmentService.distributeBlocksIntoVocalRanges(
                 blocks: &tempBlocks,
                 indices: 0..<tempBlocks.count,
-                segments: cachedWhisperSegments,
+                segments: filteredSegments,
                 startBound: leftEnd,
                 endBound: rightStart,
                 confidence: 0.3
@@ -633,7 +673,8 @@ class ProjectViewModel: ObservableObject {
                 toIndex: toIndex,
                 timeBefore: timeBefore,
                 timeAfter: timeAfter,
-                mode: .legacy
+                mode: .legacy,
+                ignoreRegions: project.ignoreRegions
             )
 
             // Apply results — the realignRegion method already preserves anchors
@@ -771,7 +812,8 @@ class ProjectViewModel: ObservableObject {
                 aligned = WhisperAlignmentService.align(
                     segments: segments,
                     to: project.lyricBlocks,
-                    mode: alignmentQualityMode
+                    mode: alignmentQualityMode,
+                    ignoreRegions: project.ignoreRegions
                 ) { [weak self] msg in
                     Task { @MainActor in
                         self?.alignmentProgress = "Stage 3: \(msg)"
