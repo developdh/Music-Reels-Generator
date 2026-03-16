@@ -216,6 +216,30 @@ class ProjectViewModel: ObservableObject {
         selectedBlockID = block.id
     }
 
+    // MARK: - Block Navigation
+
+    func selectPreviousBlock() {
+        guard !project.lyricBlocks.isEmpty else { return }
+        if let idx = selectedBlockIndex {
+            if idx > 0 {
+                selectedBlockID = project.lyricBlocks[idx - 1].id
+            }
+        } else {
+            selectedBlockID = project.lyricBlocks.last?.id
+        }
+    }
+
+    func selectNextBlock() {
+        guard !project.lyricBlocks.isEmpty else { return }
+        if let idx = selectedBlockIndex {
+            if idx < project.lyricBlocks.count - 1 {
+                selectedBlockID = project.lyricBlocks[idx + 1].id
+            }
+        } else {
+            selectedBlockID = project.lyricBlocks.first?.id
+        }
+    }
+
     // MARK: - Lyrics
 
     func parseLyrics() {

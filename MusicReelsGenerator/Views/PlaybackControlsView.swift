@@ -107,6 +107,17 @@ struct PlaybackControlsView: View {
                 .disabled(vm.selectedBlockID == nil)
                 .keyboardShortcut("]", modifiers: .command)
                 .help("Set block end to current time (Cmd+])")
+
+                // Hidden: block navigation (Cmd+Up/Down)
+                Button { vm.selectPreviousBlock() } label: { EmptyView() }
+                    .keyboardShortcut(.upArrow, modifiers: .command)
+                    .frame(width: 0, height: 0)
+                    .opacity(0)
+
+                Button { vm.selectNextBlock() } label: { EmptyView() }
+                    .keyboardShortcut(.downArrow, modifiers: .command)
+                    .frame(width: 0, height: 0)
+                    .opacity(0)
             }
             .disabled(vm.player == nil)
         }
