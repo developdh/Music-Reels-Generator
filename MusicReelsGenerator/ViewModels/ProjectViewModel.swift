@@ -183,9 +183,9 @@ class ProjectViewModel: ObservableObject {
             // Jump to start if at the end, or respect trim bounds
             let trimStart = project.trimSettings.startTime
             let trimEnd = project.trimSettings.endTime
-            if trimEnd > 0 && currentTime >= trimEnd {
+            if trimEnd > 0 && currentTime >= trimEnd - 0.15 {
                 seek(to: trimStart)
-            } else if currentTime >= duration - 0.1 {
+            } else if currentTime >= duration - 0.15 {
                 seek(to: trimStart)
             } else if currentTime < trimStart {
                 seek(to: trimStart)
