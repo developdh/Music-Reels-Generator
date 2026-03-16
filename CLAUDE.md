@@ -20,7 +20,7 @@ The bare executable (`swift build` output) works for quick iteration but the `.a
 
 **Single ViewModel pattern**: `ProjectViewModel` (@MainActor ObservableObject) owns all app state. Services are stateless — they take input, return output, no retained state. Views observe ProjectViewModel via `@EnvironmentObject`.
 
-**Three-panel layout**: `ContentView` is an HSplitView — LyricsPanelView (left) | VideoPreviewView (center) | InspectorPanelView (right, 6 tabs).
+**Three-panel layout**: `ContentView` is an HSplitView — LyricsPanelView (left) | VideoPreviewView (center) | InspectorPanelView (right, 7 tabs: Block/Trim/Crop/Style/Overlay/Ignore/Info).
 
 ### Rendering Pipeline (Preview/Export Unification)
 
@@ -39,7 +39,7 @@ Homebrew FFmpeg lacks libass, so export is split:
 ### Dual Alignment Pipeline
 
 Two completely separate alignment paths selected at runtime in `runAutoAlignment()`:
-- **Production** (`WhisperAlignmentService`): whisper-cpp CLI → CSV parsing → position-aware beam-search DP (Swift). Cached segments enable fast local re-alignment.
+- **Production** (`WhisperAlignmentService`): whisper-cpp CLI → CSV parsing → position-aware beam-search DP (Swift). Language flag from `PrimaryLanguage` (ja/ko/en/auto). Ignore regions filter out segments before alignment. Cached segments enable fast local re-alignment.
 - **Experimental** (`AdvancedAlignmentService`): Python subprocess → `Scripts/alignment_pipeline.py` → JSON I/O. Three sub-modes (Segment/Refined/Hybrid).
 
 ### Dual Anchor System
@@ -49,6 +49,16 @@ Two completely separate alignment paths selected at runtime in `runAutoAlignment
 - **`isTrustedAnchor`** (computed): `isUserAnchor || (manuallyAdjustedStart && manuallyAdjustedEnd)`. Only trusted anchors are used for piecewise correction.
 
 After alignment, `isUserAnchor` flags are restored because the alignment service overwrites `isAnchor` but doesn't know about user anchors.
+
+### Language & Lyrics Model
+
+`PrimaryLanguage` enum (ja/ko/en/auto) stored in `Project.primaryLanguage`. Determines the whisper `-l` flag; `auto` omits it for auto-detection.
+
+`LyricBlock` has `japanese` and `korean` fields (legacy names kept for Codable backward compat). These are semantically "primary text" and "secondary text". Secondary text can be empty — the parser accepts 1-line blocks (primary only) or 2-line blocks (primary + secondary). `SubtitleRenderer` skips Line 2 rendering when `korean` is empty.
+
+### Ignore Regions
+
+`IgnoreRegion` (start/end/label) stored in `Project.ignoreRegions`. `WhisperAlignmentService.filterIgnoredSegments()` removes whisper segments overlapping any ignore region. Applied in `align()`, `realignRegion()`, and piecewise correction.
 
 ### Timing Coordinate Spaces
 
@@ -67,7 +77,7 @@ Two variants: `run()` (collect all output) and `runStreaming()` (line-by-line st
 
 ## Key Conventions
 
-**Backward-compatible Codable**: All models use `decodeIfPresent` with `??` defaults. Legacy fields are migrated in custom `init(from:)` (e.g., single `isManuallyAdjusted` → granular `manuallyAdjustedStart`/`manuallyAdjustedEnd`; single `textColorHex` → per-language colors).
+**Backward-compatible Codable**: All models use `decodeIfPresent` with `??` defaults. Legacy fields are migrated in custom `init(from:)` (e.g., single `isManuallyAdjusted` → granular `manuallyAdjustedStart`/`manuallyAdjustedEnd`; single `textColorHex` → per-language colors; missing `primaryLanguage` → `.japanese`; missing `ignoreRegions` → `[]`).
 
 **Error handling**: Each service has its own `LocalizedError` enum. ProcessRunner failures are wrapped in service-level errors.
 
@@ -82,4 +92,6 @@ Two variants: `run()` (collect all output) and `runStreaming()` (line-by-line st
 - Whisper model is searched across multiple fallback paths (homebrew, `~/.local/share/whisper-cpp/models/`, etc.)
 - No app sandbox — required for launching external processes (FFmpeg, whisper-cpp, Python)
 - Style presets persist separately from projects in `~/Library/Application Support/MusicReelsGenerator/style_presets.json`
-- Piecewise correction weights by Japanese text character count (min 1 to avoid division by zero)
+- Piecewise correction weights by primary text (`japanese` field) character count (min 1 to avoid division by zero)
+- `LyricBlock.japanese`/`korean` field names are kept for Codable backward compat — they mean "primary"/"secondary", not literally Japanese/Korean
+- Non-speech segments (`(拍手)`, `[Music]`, etc.) are filtered from DP candidates and fragment merging to prevent instrumental markers from polluting lyric timing
