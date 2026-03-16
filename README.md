@@ -15,7 +15,7 @@
   </a>
 </p>
 
-<p><strong>A macOS desktop app for generating vertical music lyric videos (Reels / Shorts) from an existing music video file and bilingual (Japanese + Korean) lyrics.</strong></p>
+<p><strong>A macOS desktop app for generating vertical music lyric videos (Reels / Shorts) from an existing music video file and lyrics. Supports multiple primary languages (Japanese, Korean, English, Auto) with optional bilingual subtitles.</strong></p>
 
 <p>
   <img src="https://img.shields.io/badge/Swift-5.9+-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift">
@@ -34,19 +34,21 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 ## Features
 
 - **Video Import** — Load any local video file (.mp4, .mov, .avi), extract metadata (dimensions, duration, FPS, file size), preview in-app with AVPlayerLayer
-- **Bilingual Lyrics Parser** — Paste Japanese + Korean lyrics in a simple block format (2 lines per block, blank line separator)
+- **Multi-Language Support** — Configurable primary language for speech recognition: Japanese, Korean, English, or Auto-detect (multilingual). Language picker in the toolbar, saved per-project
+- **Flexible Lyrics Parser** — Paste lyrics in a simple block format (blank line separator). Supports monolingual (1 line per block) or bilingual (2 lines per block: primary + secondary language). Mixing mono/bilingual blocks is allowed. Secondary language is optional and purely for display
+- **Ignore Regions** — Mark time ranges to exclude from speech recognition (e.g., MC talk, audience interaction in live concert videos). Segments overlapping ignore regions are filtered out before alignment, local re-alignment, and anchor correction
 - **Production Alignment Engine** — whisper-cpp segment matching with position-aware beam-search DP, drift detection, boundary snap, and multi-pass refinement. Selected as production default for consistently best results on singing audio
 - **Experimental Pipelines** — Three additional Python-based alignment modes for A/B comparison: segment-level Levenshtein, gated refinement, and ungated hybrid. These are clearly labeled as experimental and isolated from production output
 - **Drift Detection** — Automatically detects runs of blocks with systematic positional drift (e.g., from chorus confusion) and re-anchors them against local segments
 - **Boundary Snap** — Post-alignment step that snaps block start/end times to nearest whisper segment edges for tighter subtitle timing
 - **Confidence Scoring** — Each block gets a 0–1 confidence score. Low-confidence blocks are visually flagged (orange border) for manual review. Interpolated blocks show ~0.05 confidence
 - **Dual Anchor System** — Two anchor types: auto-anchors (grey lock, set by alignment based on textScore ≥ 0.6) and user anchors (blue lock, set manually). Only user anchors and fully manually-adjusted blocks are used as reference points for piecewise correction
-- **Piecewise Anchor Correction** — Distributes timing proportionally between trusted anchor pairs (user-set or both start/end manually adjusted) by Japanese text character count. Runs automatically after alignment if user anchors exist. Also available as manual "전체 구간 재보정" and "이전앵커~다음앵커 재보정" operations
+- **Piecewise Anchor Correction** — Distributes timing proportionally between trusted anchor pairs (user-set or both start/end manually adjusted) by primary text character count. Runs automatically after alignment if user anchors exist. Also available as manual "전체 구간 재보정" and "이전앵커~다음앵커 재보정" operations
 - **Local Re-Alignment** — Re-runs whisper-cpp alignment on a bounded region between surrounding anchors using cached transcription segments, without re-transcribing the full audio
 - **Manual Timing Correction** — Set start/end times from playback position, shift all following blocks by a delta, fine-grained nudge (+-0.1s / +-0.5s), keyboard shortcuts (Cmd+[ / Cmd+]). Granular tracking of which boundary (start/end) was manually adjusted
 - **Video Trimming** — Non-destructive trim in/out to cut intros, outros, or shorten the final reel. Draggable start/end handles on the trim bar for quick visual adjustment, plus precise numeric controls. Trim range is enforced in preview playback (auto-stop at trim end, loop to trim start on play) and applied during export via FFmpeg seek
 - **Vertical Reframing** — Crop any aspect ratio video to 9:16 with adjustable horizontal and vertical offset sliders plus 1x–3x zoom slider. Cover-mode scaling ensures no black bars
-- **Subtitle Styling** — Independent Japanese/Korean font family selection (with recommended CJK fonts: Hiragino Sans, Apple SD Gothic Neo, etc.), font size (JP: 24–120, KR: 20–100), per-language text color with color pickers and 5 preset swatches, outline width (0–8 px), shadow toggle, bottom margin (50–960, up to screen center), line spacing
+- **Subtitle Styling** — Independent Line 1/Line 2 font family selection (with recommended CJK fonts: Hiragino Sans, Apple SD Gothic Neo, etc.), font size (Line 1: 24–120, Line 2: 20–100), per-line text color with color pickers and 5 preset swatches, outline width (0–8 px), shadow toggle, bottom margin (50–960, up to screen center), line spacing. When only primary language is present, Line 2 is hidden
 - **Metadata Overlay** — Optional top-left title/artist overlay with dark rounded background box. Independent font, size, and color controls for title and artist. Configurable background opacity, corner radius, padding, and position margins
 - **Style Presets** — Save, load, rename, duplicate, and delete reusable style presets (subtitle + overlay styling). Presets persist in Application Support and are reusable across all projects. Presets capture visual styling only, excluding song-specific text content (title/artist text)
 - **Unified Preview/Export Rendering** — Both preview and export use the same Core Graphics subtitle renderer (`SubtitleRenderer`), rendering at 1080x1920 canvas with multi-pass outline/shadow/fill. Preview displays a scaled-down version, ensuring pixel-identical typography
@@ -60,7 +62,7 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 - **FFmpeg** — audio extraction, video crop/scale/trim/encode
 
 ### For production alignment (Recommended mode)
-- **whisper-cpp** — offline Japanese speech recognition (binary: `whisper-cli`)
+- **whisper-cpp** — offline speech recognition (binary: `whisper-cli`)
 - **Whisper model file** — e.g., `ggml-medium.bin` (~1.5 GB)
 
 ### For experimental pipelines (Exp: Segment / Refined / Hybrid)
@@ -129,8 +131,9 @@ open ".build/Music Reels Generator.app"
 ```
 
 1. Import `GreenlightsSerenade3.mp4` from the project root
-2. Paste bilingual lyrics (Japanese + Korean)
-3. Keep the default "Recommended" mode and click "Auto-Align"
+2. Select the primary language from the toolbar dropdown
+3. Paste lyrics (primary language only, or primary + secondary bilingual)
+4. Keep the default "Recommended" mode and click "Auto-Align"
 4. Adjust crop, trim, subtitle styling, and metadata overlay
 5. Export the final vertical video
 
@@ -142,27 +145,33 @@ File > Import Video (Cmd+I), or click "Import Video" in the toolbar. Supports `.
 
 ### 2. Paste Lyrics
 
-Click the "+" button in the Lyrics panel. Paste lyrics in this format:
+Click the "+" button in the Lyrics panel. Paste lyrics in one of these formats:
 
+**Monolingual (primary language only):**
+```
+Hello world
+
+Goodbye world
+```
+
+**Bilingual (primary + secondary language):**
 ```
 こんにちは
 안녕하세요
-
-ハロー
-헬로
 
 さようなら
 안녕히 가세요
 ```
 
 Rules:
-- 2 lines per block (Japanese, then Korean)
+- 1 line per block (primary only) or 2 lines per block (primary + secondary)
 - Blank line between blocks
+- Mixing mono/bilingual blocks is allowed
 - Extra blank lines are ignored
 
 ### 3. Auto-Align
 
-Select an alignment mode from the toolbar dropdown, then click "Auto-Align". The toolbar shows status badges for FFmpeg (green/red), Whisper (green/red for whisper-cpp), and Python (Exp) (green/red for experimental pipeline availability).
+Select the primary language and alignment mode from the toolbar dropdowns, then click "Auto-Align". The language setting determines the whisper `-l` flag (Auto omits it for auto-detection). The toolbar shows status badges for FFmpeg (green/red), Whisper (green/red for whisper-cpp), and Python (Exp) (green/red for experimental pipeline availability).
 
 **Alignment Modes:**
 
@@ -222,7 +231,17 @@ In the Inspector > Trim tab:
 - "Reset Trim" restores the full video duration
 - The trimmed duration is shown in the playback controls
 
-### 6. Adjust Crop
+### 6. Ignore Regions
+
+In the Inspector > Ignore tab:
+- Click "현재 위치에 무시 구간 추가" to add an ignore region at the current playback position (default +10s)
+- Adjust start/end times with "현재" (set to current) or ±0.1s / ±1s nudge buttons
+- Add labels to identify each region (e.g., "MC talk", "audience interaction")
+- Click "이 구간으로 이동" to seek to a region
+- Delete regions with the trash button
+- Ignore regions are applied during alignment: whisper segments overlapping any ignore region are filtered out before matching
+
+### 7. Adjust Crop
 
 In the Inspector > Crop tab:
 - Adjust the horizontal offset slider (L-R) to position the vertical crop window
@@ -231,18 +250,18 @@ In the Inspector > Crop tab:
 - Click "Center H" / "Center V" to reset offsets, "Reset Zoom" to return to 1x
 - The preview shows the 9:16 frame in real-time with cover-mode scaling
 
-### 7. Style Subtitles
+### 8. Style Subtitles
 
 In the Inspector > Style tab:
-- Choose Japanese and Korean font families independently (recommended CJK fonts listed first: Hiragino Sans, Hiragino Kaku Gothic ProN, Apple SD Gothic Neo, etc.)
-- Adjust font sizes (JP: 24–120, KR: 20–100)
-- Set per-language text colors using color pickers or preset swatches (White, Cyan, Yellow, Mint, Pink)
+- Choose Line 1 and Line 2 font families independently (recommended CJK fonts listed first: Hiragino Sans, Hiragino Kaku Gothic ProN, Apple SD Gothic Neo, etc.)
+- Adjust font sizes (Line 1: 24–120, Line 2: 20–100)
+- Set per-line text colors using color pickers or preset swatches (White, Cyan, Yellow, Mint, Pink)
 - Set outline width (0–8 px), toggle shadow
-- Adjust bottom margin (50–960, up to screen center) and line spacing between Japanese/Korean lines
+- Adjust bottom margin (50–960, up to screen center) and line spacing between lines
 - **Style presets**: Save the current style as a named preset for reuse. Apply presets from the dropdown, or manage (rename, duplicate, delete) in the preset manager. Presets capture subtitle + overlay styling but not song-specific text
 - Preview uses the same `SubtitleRenderer` as export — what you see is what you get
 
-### 8. Title / Artist Overlay
+### 9. Title / Artist Overlay
 
 In the Inspector > Overlay tab:
 - Toggle the overlay on/off
@@ -254,7 +273,7 @@ In the Inspector > Overlay tab:
 - The overlay appears in the top-left area with a dark rounded background box
 - Preview and export render identically using the shared `SubtitleRenderer`
 
-### 9. Export
+### 10. Export
 
 Click "Export" in the toolbar. Choose a save location. The app will:
 1. Trim and crop the video to 1080x1920 via FFmpeg (`-ss` seek + `-t` duration, H.264 CRF 18, fast preset, AAC 192k)
@@ -267,7 +286,7 @@ Click "Export" in the toolbar. Choose a save location. The app will:
 8. Audio is passed through on a background queue
 9. Progress is shown in the bottom status bar
 
-### 10. Save & Load
+### 11. Save & Load
 
 - **Save**: Click "Save" in the toolbar or Cmd+S. If no file exists yet, a Save As dialog appears
 - **Open**: Click "Open" in the toolbar or Cmd+O to load a `.mreels` project file
@@ -284,6 +303,8 @@ Click "Export" in the toolbar. Choose a save location. The app will:
 | Forward 5s | Cmd+Right |
 | Back 1s | Left |
 | Forward 1s | Right |
+| Previous Block | Cmd+Up |
+| Next Block | Cmd+Down |
 | Set Block Start | Cmd+[ |
 | Set Block End | Cmd+] |
 | New Project | Cmd+N |
@@ -299,8 +320,10 @@ MusicReelsGenerator/
 ├── App/
 │   └── MusicReelsGeneratorApp     # @main, AppDelegate (key event monitor), window config
 ├── Models/
-│   ├── Project                    # Root aggregate: video, metadata, blocks, styles, trim, overlay
-│   ├── LyricBlock                 # JP+KR text, timing, confidence, isAnchor/isUserAnchor, manual flags
+│   ├── Project                    # Root aggregate: video, metadata, blocks, styles, trim, overlay, language
+│   ├── LyricBlock                 # Primary+secondary text, timing, confidence, isAnchor/isUserAnchor, manual flags
+│   ├── PrimaryLanguage            # Language enum (ja/ko/en/auto) for whisper transcription
+│   ├── IgnoreRegion               # Time range excluded from alignment (start, end, label)
 │   ├── VideoMetadata              # Dimensions, duration, FPS, file size, aspect ratio detection
 │   ├── CropSettings               # 9:16 crop mode, H/V offsets (-1..1), zoom (1x-3x), output resolution (1080x1920)
 │   ├── TrimSettings               # Trim in/out times, clamping, validation, duration
@@ -312,7 +335,7 @@ MusicReelsGenerator/
 │   ├── AudioExtractionService     # FFmpeg -> 16kHz mono PCM WAV
 │   ├── WhisperAlignmentService    # Production: whisper-cpp + beam DP + drift detection + boundary snap
 │   ├── AdvancedAlignmentService   # Experimental: Python subprocess integration, JSON I/O
-│   ├── LyricsParserService        # Block-format bilingual parser (Japanese line, Korean line, blank)
+│   ├── LyricsParserService        # Block-format parser (1 or 2 lines per block, blank separator)
 │   ├── ExportService              # Two-stage: FFmpeg trim+crop -> AVFoundation frame-by-frame burn-in
 │   ├── SubtitleRenderService      # ASS subtitle file generation with per-language styles
 │   ├── VideoService               # AVFoundation metadata extraction (handles rotated videos)
@@ -325,8 +348,8 @@ MusicReelsGenerator/
 │   ├── LyricsPanelView            # Block list with confidence badges, anchor icons (blue/grey lock)
 │   ├── VideoPreviewView           # AVPlayerLayer + crop offset + metadata overlay + subtitle overlay
 │   ├── PlaybackControlsView       # Scrubber with trim indicator, play/pause, +-1s/+-5s, set timing
-│   ├── InspectorPanelView         # 6 tabs: Block / Trim / Crop / Style / Overlay / Info
-│   ├── ToolbarView                # Import, mode picker, Align, status badges, Export, Open, Save
+│   ├── InspectorPanelView         # 7 tabs: Block / Trim / Crop / Style / Overlay / Ignore / Info
+│   ├── ToolbarView                # Import, language picker, mode picker, Align, status badges, Export, Open, Save
 │   └── StatusBarView              # Export progress bar, status message, dirty indicator
 ├── Utilities/
 │   ├── SubtitleRenderer           # Shared Core Graphics renderer: renderBlock + renderMetadataOverlay
@@ -351,7 +374,7 @@ Scripts/
 
 The production alignment engine uses whisper-cpp for segment-level alignment with drift detection and boundary snap:
 
-1. **Transcription** — whisper-cpp transcribes audio into sentence-level segments (~20–30 per song) with start/end timestamps via `--output-csv`
+1. **Transcription** — whisper-cpp transcribes audio into sentence-level segments (~20–30 per song) with start/end timestamps via `--output-csv`. Language is determined by the project's primary language setting (`-l ja`, `-l ko`, `-l en`, or omitted for auto-detect). Segments overlapping ignore regions are filtered out before alignment
 
 2. **Non-Speech Filtering** — Segments containing non-speech markers (`(拍手)`, `(音楽)`, `[Music]`, `[Applause]`, etc.) are identified and excluded from matching candidates. Fragment merging never combines speech with non-speech segments. This prevents instrumental/applause markers from polluting lyric timing
 
@@ -438,9 +461,9 @@ Both preview and export use the same `SubtitleRenderer` — a shared Core Graphi
 1. `SubtitleRenderer.renderBlock()` renders subtitle text at the canonical 1080x1920 export canvas
 2. `SubtitleRenderer.renderMetadataOverlay()` renders the title/artist overlay with dark rounded background box at the same canvas
 3. Font resolution uses `NSFontDescriptor` with `.family` attribute (not `NSFont(name:)` which requires PostScript names)
-4. Japanese subtitle font gets bold trait via `NSFontManager.shared.convert(toHaveTrait: .boldFontMask)`
+4. Line 1 (primary) subtitle font gets bold trait via `NSFontManager.shared.convert(toHaveTrait: .boldFontMask)`
 5. Multi-pass subtitle rendering: outline (offset grid from -outlineR to +outlineR) -> shadow (offset 2, -2) -> fill
-6. Text layout: Korean at bottom margin, Japanese above with configurable line spacing gap
+6. Text layout: Line 2 (secondary) at bottom margin, Line 1 (primary) above with configurable line spacing gap. When secondary text is empty, only Line 1 is rendered at bottom margin
 7. Preview displays the resulting CGImages scaled down to fit the preview container via `resizable(interpolation: .high)`
 8. Export composites the same CGImages at full resolution onto video frames via CGContext drawing
 
@@ -450,20 +473,22 @@ This eliminates all mismatch between preview and export: same fonts, same outlin
 
 Projects are saved as `.mreels` files (JSON with ISO 8601 dates, pretty-printed, sorted keys). They store:
 - Project title, UUID, created/updated timestamps
+- Primary language setting (ja/ko/en/auto)
 - Source video path and cached metadata (width, height, duration, FPS, file size)
 - Trim settings (start/end times)
 - Crop settings (mode, horizontal/vertical offset, zoom level, output resolution)
-- Subtitle style (per-language font families, sizes, text colors as hex, outline color/width, shadow, bottom margin, line spacing)
+- Ignore regions (array of start/end/label)
+- Subtitle style (per-line font families, sizes, text colors as hex, outline color/width, shadow, bottom margin, line spacing)
 - Metadata overlay settings (enabled flag, title/artist text, fonts, colors, background box opacity/radius, position margins, padding, line spacing)
-- All lyric blocks with: UUID, Japanese/Korean text, start/end times, confidence score, manual adjustment flags (per-boundary), isAnchor, isUserAnchor
+- All lyric blocks with: UUID, primary/secondary text, start/end times, confidence score, manual adjustment flags (per-boundary), isAnchor, isUserAnchor
 - Style presets stored separately in `~/Library/Application Support/MusicReelsGenerator/style_presets.json`
 
-Backward compatibility: older project files without `trimSettings`, `isAnchor`, `isUserAnchor`, `metadataOverlay`, per-language text color fields, or granular `manuallyAdjustedStart`/`manuallyAdjustedEnd` are handled via custom `Decodable` initializers that supply default values. Legacy single `textColorHex` is migrated to both `japaneseTextColorHex` and `koreanTextColorHex`. Legacy single `isManuallyAdjusted` is migrated to both per-boundary flags.
+Backward compatibility: older project files without `primaryLanguage`, `ignoreRegions`, `trimSettings`, `isAnchor`, `isUserAnchor`, `metadataOverlay`, per-language text color fields, or granular `manuallyAdjustedStart`/`manuallyAdjustedEnd` are handled via custom `Decodable` initializers that supply default values. Missing `primaryLanguage` defaults to Japanese. Missing `ignoreRegions` defaults to empty array. Legacy single `textColorHex` is migrated to both per-line color fields. Legacy single `isManuallyAdjusted` is migrated to both per-boundary flags.
 
 ## Limitations
 
 - One video per project
-- Japanese speech recognition only (whisper language fixed to `ja`)
+- Alignment quality varies by language; best tuned for Japanese singing audio
 - Line-level subtitle output (character-level alignment is internal; no word-level karaoke display)
 - Whisper alignment quality depends on audio clarity and vocal/accompaniment separation
 - Frame-by-frame export is CPU-intensive (processes each video frame individually)
