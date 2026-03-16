@@ -1,13 +1,10 @@
 import Foundation
 
 enum LyricsParseError: LocalizedError {
-    case oddNumberOfLines(count: Int)
     case emptyInput
 
     var errorDescription: String? {
         switch self {
-        case .oddNumberOfLines(let count):
-            return "Lyrics have \(count) non-empty lines. Each block needs exactly 2 lines (Line 1 + Line 2). Check for missing translations."
         case .emptyInput:
             return "No lyrics text provided."
         }
@@ -15,58 +12,51 @@ enum LyricsParseError: LocalizedError {
 }
 
 enum LyricsParserService {
-    /// Parse bilingual lyrics from the expected format:
-    /// <Japanese line>
-    /// <Korean line>
-    /// (blank line)
-    /// <Japanese line>
-    /// <Korean line>
+    /// Parse lyrics from a block format:
+    /// - 1 line per block: primary language only (secondary = "")
+    /// - 2 lines per block: primary + secondary language
+    /// - Blocks separated by blank lines
+    /// Mixing 1-line and 2-line blocks within the same input is allowed.
     static func parse(_ text: String) throws -> [LyricBlock] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw LyricsParseError.emptyInput
         }
 
-        // Split into lines, group non-empty lines into blocks separated by blank lines
         let allLines = trimmed.components(separatedBy: .newlines)
 
         var blocks: [LyricBlock] = []
-        var currentPair: [String] = []
+        var currentGroup: [String] = []
+
+        func flushGroup(_ group: [String]) {
+            var i = 0
+            while i < group.count {
+                if i + 1 < group.count {
+                    // 2 lines available — treat as primary + secondary
+                    blocks.append(LyricBlock(japanese: group[i], korean: group[i + 1]))
+                    i += 2
+                } else {
+                    // 1 line — primary only
+                    blocks.append(LyricBlock(japanese: group[i], korean: ""))
+                    i += 1
+                }
+            }
+        }
 
         for line in allLines {
             let stripped = line.trimmingCharacters(in: .whitespaces)
             if stripped.isEmpty {
-                // End of a block — flush if we have lines
-                if !currentPair.isEmpty {
-                    if currentPair.count % 2 != 0 {
-                        throw LyricsParseError.oddNumberOfLines(count: currentPair.count)
-                    }
-                    for i in stride(from: 0, to: currentPair.count, by: 2) {
-                        blocks.append(LyricBlock(
-                            japanese: currentPair[i],
-                            korean: currentPair[i + 1]
-                        ))
-                    }
-                    currentPair = []
+                if !currentGroup.isEmpty {
+                    flushGroup(currentGroup)
+                    currentGroup = []
                 }
             } else {
-                currentPair.append(stripped)
+                currentGroup.append(stripped)
             }
         }
 
-        // Flush remaining
-        if !currentPair.isEmpty {
-            if currentPair.count % 2 != 0 {
-                // Count total non-empty lines for error message
-                let totalNonEmpty = allLines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
-                throw LyricsParseError.oddNumberOfLines(count: totalNonEmpty)
-            }
-            for i in stride(from: 0, to: currentPair.count, by: 2) {
-                blocks.append(LyricBlock(
-                    japanese: currentPair[i],
-                    korean: currentPair[i + 1]
-                ))
-            }
+        if !currentGroup.isEmpty {
+            flushGroup(currentGroup)
         }
 
         if blocks.isEmpty {

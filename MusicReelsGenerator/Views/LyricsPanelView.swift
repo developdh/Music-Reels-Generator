@@ -117,10 +117,12 @@ struct LyricBlockRow: View {
                 .font(.system(size: 14, weight: isActive ? .bold : .regular))
                 .lineLimit(1)
 
-            Text(block.korean)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
+            if !block.korean.isEmpty {
+                Text(block.korean)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
 
             if block.hasTimingData {
                 Text(block.durationString)
@@ -182,7 +184,7 @@ struct LyricsInputSheet: View {
             Text("Paste Bilingual Lyrics")
                 .font(.headline)
 
-            Text("Format: Line 1 (주 언어), then Line 2 (부 언어), separated by blank lines.")
+            Text("블록 사이는 빈 줄로 구분합니다. 주 언어만 입력하거나, 주 언어 + 부 언어 2줄로 입력할 수 있습니다.")
                 .font(.caption)
                 .foregroundColor(.secondary)
 

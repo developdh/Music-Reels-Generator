@@ -57,38 +57,46 @@ enum SubtitleRenderer {
         }
 
         // Measure text
+        let hasSecondary = !block.korean.isEmpty
+
         let jaFillAttrs: [NSAttributedString.Key: Any] = [
             .font: jaFont,
             .foregroundColor: jaTextColor,
             .paragraphStyle: paragraphStyle
         ]
+        let jaStr = NSAttributedString(string: block.japanese, attributes: jaFillAttrs)
+        let jaSize = jaStr.boundingRect(
+            with: NSSize(width: maxTextWidth, height: 500),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        ).size
+
         let koFillAttrs: [NSAttributedString.Key: Any] = [
             .font: koFont,
             .foregroundColor: koTextColor,
             .paragraphStyle: paragraphStyle
         ]
-
-        let jaStr = NSAttributedString(string: block.japanese, attributes: jaFillAttrs)
-        let koStr = NSAttributedString(string: block.korean, attributes: koFillAttrs)
-
-        let jaSize = jaStr.boundingRect(
+        let koStr = hasSecondary ? NSAttributedString(string: block.korean, attributes: koFillAttrs) : nil
+        let koSize = koStr?.boundingRect(
             with: NSSize(width: maxTextWidth, height: 500),
             options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).size
-        let koSize = koStr.boundingRect(
-            with: NSSize(width: maxTextWidth, height: 500),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).size
+        ).size ?? .zero
 
         // Y positions (NSImage origin = bottom-left)
-        let koY = style.bottomMargin
-        let jaY = koY + koSize.height + style.lineSpacing
+        let jaY: CGFloat
+        let koRect: NSRect?
+        if hasSecondary {
+            let koY = style.bottomMargin
+            jaY = koY + koSize.height + style.lineSpacing
+            koRect = NSRect(
+                x: (canvasSize.width - maxTextWidth) / 2,
+                y: koY,
+                width: maxTextWidth, height: koSize.height + 10
+            )
+        } else {
+            jaY = style.bottomMargin
+            koRect = nil
+        }
 
-        let koRect = NSRect(
-            x: (canvasSize.width - maxTextWidth) / 2,
-            y: koY,
-            width: maxTextWidth, height: koSize.height + 10
-        )
         let jaRect = NSRect(
             x: (canvasSize.width - maxTextWidth) / 2,
             y: jaY,
@@ -101,45 +109,40 @@ enum SubtitleRenderer {
             .foregroundColor: outlineColor,
             .paragraphStyle: paragraphStyle
         ]
-        let outlineKoAttrs: [NSAttributedString.Key: Any] = [
-            .font: koFont,
-            .foregroundColor: outlineColor,
-            .paragraphStyle: paragraphStyle
-        ]
         let outlineJaStr = NSAttributedString(string: block.japanese, attributes: outlineJaAttrs)
-        let outlineKoStr = NSAttributedString(string: block.korean, attributes: outlineKoAttrs)
 
         let step: CGFloat = max(1.0, outlineR / 3.0)
         for dx in stride(from: -outlineR, through: outlineR, by: step) {
             for dy in stride(from: -outlineR, through: outlineR, by: step) {
                 if dx * dx + dy * dy > outlineR * outlineR { continue }
                 outlineJaStr.draw(in: jaRect.offsetBy(dx: dx, dy: dy))
-                outlineKoStr.draw(in: koRect.offsetBy(dx: dx, dy: dy))
+                if let koRect, hasSecondary {
+                    let outlineKoStr = NSAttributedString(string: block.korean, attributes: [
+                        .font: koFont, .foregroundColor: outlineColor, .paragraphStyle: paragraphStyle
+                    ])
+                    outlineKoStr.draw(in: koRect.offsetBy(dx: dx, dy: dy))
+                }
             }
         }
 
         // --- Shadow pass ---
         if style.shadowEnabled {
-            let shadowJaAttrs: [NSAttributedString.Key: Any] = [
-                .font: jaFont,
-                .foregroundColor: NSColor(white: 0, alpha: 0.25),
-                .paragraphStyle: paragraphStyle
-            ]
-            let shadowKoAttrs: [NSAttributedString.Key: Any] = [
-                .font: koFont,
-                .foregroundColor: NSColor(white: 0, alpha: 0.25),
-                .paragraphStyle: paragraphStyle
-            ]
             let off: CGFloat = 2
-            NSAttributedString(string: block.japanese, attributes: shadowJaAttrs)
-                .draw(in: jaRect.offsetBy(dx: off, dy: -off))
-            NSAttributedString(string: block.korean, attributes: shadowKoAttrs)
-                .draw(in: koRect.offsetBy(dx: off, dy: -off))
+            NSAttributedString(string: block.japanese, attributes: [
+                .font: jaFont, .foregroundColor: NSColor(white: 0, alpha: 0.25), .paragraphStyle: paragraphStyle
+            ]).draw(in: jaRect.offsetBy(dx: off, dy: -off))
+            if let koRect, hasSecondary {
+                NSAttributedString(string: block.korean, attributes: [
+                    .font: koFont, .foregroundColor: NSColor(white: 0, alpha: 0.25), .paragraphStyle: paragraphStyle
+                ]).draw(in: koRect.offsetBy(dx: off, dy: -off))
+            }
         }
 
         // --- Fill pass ---
         jaStr.draw(in: jaRect)
-        koStr.draw(in: koRect)
+        if let koStr, let koRect {
+            koStr.draw(in: koRect)
+        }
 
         image.unlockFocus()
 

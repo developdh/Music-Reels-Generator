@@ -43,8 +43,10 @@ enum SubtitleRenderService {
             let jaText = escapeASS(block.japanese)
             ass += "Dialogue: 0,\(startStr),\(endStr),Japanese,,0,0,0,,\(jaText)\n"
 
-            let koText = escapeASS(block.korean)
-            ass += "Dialogue: 0,\(startStr),\(endStr),Korean,,0,0,0,,\(koText)\n"
+            if !block.korean.isEmpty {
+                let koText = escapeASS(block.korean)
+                ass += "Dialogue: 0,\(startStr),\(endStr),Korean,,0,0,0,,\(koText)\n"
+            }
         }
 
         return ass
