@@ -21,6 +21,19 @@ struct ToolbarView: View {
 
             Divider().frame(height: 20)
 
+            // Primary language
+            Picker("", selection: $vm.project.primaryLanguage) {
+                ForEach(PrimaryLanguage.allCases) { lang in
+                    Text(lang.displayName).tag(lang)
+                }
+            }
+            .frame(width: 120)
+            .help("주 언어 설정 (음성 인식 언어)")
+            .onChange(of: vm.project.primaryLanguage) { _, _ in
+                vm.project.touch()
+                vm.isDirty = true
+            }
+
             // Alignment quality mode
             Picker("", selection: $vm.alignmentQualityMode) {
                 ForEach(AlignmentQualityMode.allCases) { mode in

@@ -62,13 +62,13 @@ struct BlockInspectorView: View {
                 Text("Block #\(idx + 1)")
                     .font(.headline)
 
-                GroupBox("Japanese") {
+                GroupBox("주 언어 (Line 1)") {
                     Text(block.japanese)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }
 
-                GroupBox("Korean") {
+                GroupBox("부 언어 (Line 2)") {
                     Text(block.korean)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
@@ -397,7 +397,7 @@ struct StyleInspectorView: View {
                 ManagePresetsSheet(vm: vm, presetStore: presetStore)
             }
 
-            GroupBox("Japanese Font") {
+            GroupBox("주 언어 폰트 (Line 1)") {
                 VStack(alignment: .leading, spacing: 8) {
                     FontFamilyPicker(
                         selection: $vm.project.subtitleStyle.japaneseFontFamily,
@@ -421,7 +421,7 @@ struct StyleInspectorView: View {
                 }
             }
 
-            GroupBox("Korean Font") {
+            GroupBox("부 언어 폰트 (Line 2)") {
                 VStack(alignment: .leading, spacing: 8) {
                     FontFamilyPicker(
                         selection: $vm.project.subtitleStyle.koreanFontFamily,

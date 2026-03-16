@@ -58,7 +58,7 @@ enum WhisperAlignmentService {
     static func transcribe(
         audioURL: URL,
         modelPath: String? = nil,
-        language: String = "ja",
+        language: String? = "ja",
         onProgress: ((String) -> Void)? = nil
     ) async throws -> [WhisperSegment] {
         guard let whisper = ProcessRunner.findWhisper() else {
@@ -84,14 +84,16 @@ enum WhisperAlignmentService {
         // Output CSV format for easy parsing
         let outputBase = NSTemporaryDirectory() + "whisper_output"
 
-        let args = [
+        var args = [
             "-m", model,
             "-f", audioURL.path,
-            "-l", language,
             "--output-csv",
             "--output-file", outputBase,
             "--no-prints"
         ]
+        if let language {
+            args.insert(contentsOf: ["-l", language], at: 4)
+        }
 
         let result = try await ProcessRunner.run(whisper, arguments: args)
 

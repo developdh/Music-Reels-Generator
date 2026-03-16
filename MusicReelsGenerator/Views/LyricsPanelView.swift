@@ -182,7 +182,7 @@ struct LyricsInputSheet: View {
             Text("Paste Bilingual Lyrics")
                 .font(.headline)
 
-            Text("Format: Japanese line, then Korean line, separated by blank lines.")
+            Text("Format: Line 1 (주 언어), then Line 2 (부 언어), separated by blank lines.")
                 .font(.caption)
                 .foregroundColor(.secondary)
 

@@ -8,6 +8,7 @@ struct Project: Codable, Identifiable {
     var cropSettings: CropSettings
     var trimSettings: TrimSettings
     var subtitleStyle: SubtitleStyle
+    var primaryLanguage: PrimaryLanguage
     var metadataOverlay: MetadataOverlaySettings
     var ignoreRegions: [IgnoreRegion]
     var lyricBlocks: [LyricBlock]
@@ -25,6 +26,7 @@ struct Project: Codable, Identifiable {
         self.cropSettings = CropSettings()
         self.trimSettings = TrimSettings()
         self.subtitleStyle = SubtitleStyle()
+        self.primaryLanguage = .japanese
         self.metadataOverlay = MetadataOverlaySettings()
         self.ignoreRegions = []
         self.lyricBlocks = []
@@ -64,6 +66,8 @@ struct Project: Codable, Identifiable {
         trimSettings = try container.decodeIfPresent(TrimSettings.self, forKey: .trimSettings)
             ?? TrimSettings.fullDuration(videoMetadata.duration)
         subtitleStyle = try container.decode(SubtitleStyle.self, forKey: .subtitleStyle)
+        primaryLanguage = try container.decodeIfPresent(PrimaryLanguage.self, forKey: .primaryLanguage)
+            ?? .japanese
         metadataOverlay = try container.decodeIfPresent(MetadataOverlaySettings.self, forKey: .metadataOverlay)
             ?? MetadataOverlaySettings()
         ignoreRegions = try container.decodeIfPresent([IgnoreRegion].self, forKey: .ignoreRegions)

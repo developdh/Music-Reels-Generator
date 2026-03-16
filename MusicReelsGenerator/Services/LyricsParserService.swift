@@ -7,7 +7,7 @@ enum LyricsParseError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .oddNumberOfLines(let count):
-            return "Lyrics have \(count) non-empty lines. Each block needs exactly 2 lines (Japanese + Korean). Check for missing translations."
+            return "Lyrics have \(count) non-empty lines. Each block needs exactly 2 lines (Line 1 + Line 2). Check for missing translations."
         case .emptyInput:
             return "No lyrics text provided."
         }

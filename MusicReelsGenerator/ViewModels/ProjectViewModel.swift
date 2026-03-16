@@ -661,7 +661,8 @@ class ProjectViewModel: ObservableObject {
 
                 alignmentProgress = "음성 인식 중..."
                 cachedWhisperSegments = try await WhisperAlignmentService.transcribe(
-                    audioURL: audioURL
+                    audioURL: audioURL,
+                    language: project.primaryLanguage.whisperLanguageFlag
                 ) { [weak self] msg in
                     Task { @MainActor in
                         self?.alignmentProgress = msg
@@ -807,7 +808,8 @@ class ProjectViewModel: ObservableObject {
                     return
                 }
                 let segments = try await WhisperAlignmentService.transcribe(
-                    audioURL: audioURL
+                    audioURL: audioURL,
+                    language: project.primaryLanguage.whisperLanguageFlag
                 ) { [weak self] msg in
                     Task { @MainActor in
                         self?.alignmentProgress = "Stage 2: \(msg)"
