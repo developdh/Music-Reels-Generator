@@ -14,11 +14,23 @@ struct InspectorPanelView: View {
         case info = "Info"
     }
 
+    private func tabName(_ tab: InspectorTab) -> String {
+        switch tab {
+        case .block: return L10n.Tab.block(vm.lang)
+        case .trim: return L10n.Tab.trim(vm.lang)
+        case .crop: return L10n.Tab.crop(vm.lang)
+        case .style: return L10n.Tab.style(vm.lang)
+        case .overlay: return L10n.Tab.overlay(vm.lang)
+        case .ignore: return L10n.Tab.ignore(vm.lang)
+        case .info: return L10n.Tab.info(vm.lang)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Picker("", selection: $selectedTab) {
                 ForEach(InspectorTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Text(tabName(tab)).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
@@ -59,52 +71,52 @@ struct BlockInspectorView: View {
     var body: some View {
         if let block = vm.selectedBlock, let idx = vm.selectedBlockIndex {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Block #\(idx + 1)")
+                Text(L10n.Block.title(vm.lang, index: idx + 1))
                     .font(.headline)
 
-                GroupBox("주 언어 (Line 1)") {
+                GroupBox(L10n.Block.primaryLine(vm.lang)) {
                     Text(block.japanese)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }
 
-                GroupBox("부 언어 (Line 2)") {
+                GroupBox(L10n.Block.secondaryLine(vm.lang)) {
                     Text(block.korean)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }
 
-                GroupBox("Timing") {
+                GroupBox(L10n.Block.timing(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("Start:")
+                            Text(L10n.Block.start(vm.lang))
                                 .frame(width: 40, alignment: .trailing)
                             if let start = block.startTime {
                                 Text(TimeFormatter.format(start))
                                     .monospacedDigit()
                             } else {
-                                Text("Not set")
+                                Text(L10n.Block.notSet(vm.lang))
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
-                            Button("Set Now") {
+                            Button(L10n.Block.setNow(vm.lang)) {
                                 vm.setStartTimeToCurrent()
                             }
                             .controlSize(.small)
                         }
 
                         HStack {
-                            Text("End:")
+                            Text(L10n.Block.end(vm.lang))
                                 .frame(width: 40, alignment: .trailing)
                             if let end = block.endTime {
                                 Text(TimeFormatter.format(end))
                                     .monospacedDigit()
                             } else {
-                                Text("Not set")
+                                Text(L10n.Block.notSet(vm.lang))
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
-                            Button("Set Now") {
+                            Button(L10n.Block.setNow(vm.lang)) {
                                 vm.setEndTimeToCurrent()
                             }
                             .controlSize(.small)
@@ -112,7 +124,7 @@ struct BlockInspectorView: View {
 
                         if let confidence = block.confidence {
                             HStack {
-                                Text("Confidence:")
+                                Text(L10n.Block.confidence(vm.lang))
                                 ConfidenceBadge(confidence: confidence, isManual: block.isManuallyAdjusted)
                             }
                         }
@@ -120,14 +132,14 @@ struct BlockInspectorView: View {
                 }
 
                 HStack {
-                    Button("Seek to Start") {
+                    Button(L10n.Block.seekToStart(vm.lang)) {
                         if let start = block.startTime {
                             vm.seek(to: start)
                         }
                     }
                     .disabled(block.startTime == nil)
 
-                    Button("Seek to End") {
+                    Button(L10n.Block.seekToEnd(vm.lang)) {
                         if let end = block.endTime {
                             vm.seek(to: end)
                         }
@@ -137,13 +149,13 @@ struct BlockInspectorView: View {
 
                 Divider()
 
-                GroupBox("Correction") {
+                GroupBox(L10n.Block.correction(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Button("Set Start & Shift Following") {
+                        Button(L10n.Block.setStartShiftFollowing(vm.lang)) {
                             vm.setStartTimeAndShiftFollowing()
                         }
                         .controlSize(.small)
-                        .help("Set this block's start to current time and shift all following blocks by the same delta")
+                        .help(L10n.Block.setStartShiftHelp(vm.lang))
 
                         HStack(spacing: 4) {
                             Button("-0.5s") { vm.shiftFollowingBlocks(fromBlockID: block.id, delta: -0.5) }
@@ -155,35 +167,35 @@ struct BlockInspectorView: View {
                     }
                 }
 
-                GroupBox("앵커 & 재보정") {
+                GroupBox(L10n.Anchor.anchorCorrection(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
                         // Anchor controls
                         HStack {
                             if block.isUserAnchor {
-                                Label("사용자 앵커", systemImage: "lock.fill")
+                                Label(L10n.Anchor.userAnchor(vm.lang), systemImage: "lock.fill")
                                     .font(.caption)
                                     .foregroundColor(.blue)
                                 Spacer()
-                                Button("앵커 해제") {
+                                Button(L10n.Anchor.releaseAnchor(vm.lang)) {
                                     vm.unsetAnchor(id: block.id)
                                 }
                                 .controlSize(.small)
                             } else if block.isAnchor {
-                                Label("자동 앵커", systemImage: "lock.fill")
+                                Label(L10n.Anchor.autoAnchor(vm.lang), systemImage: "lock.fill")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                 Spacer()
-                                Button("사용자 앵커로 승격") {
+                                Button(L10n.Anchor.promoteToUser(vm.lang)) {
                                     vm.setAnchor(id: block.id)
                                 }
                                 .controlSize(.small)
-                                .help("이 자동 앵커를 사용자 앵커로 승격하여 재보정 기준점으로 사용합니다")
+                                .help(L10n.Anchor.promoteHelp(vm.lang))
                             } else {
-                                Button("이 줄을 앵커로 고정") {
+                                Button(L10n.Anchor.setAsAnchor(vm.lang)) {
                                     vm.setAnchor(id: block.id)
                                 }
                                 .controlSize(.small)
-                                .help("이 블록의 타이밍을 신뢰할 수 있는 기준점으로 고정합니다")
+                                .help(L10n.Anchor.setAsAnchorHelp(vm.lang))
                             }
                         }
 
@@ -192,7 +204,7 @@ struct BlockInspectorView: View {
                                 Image(systemName: "lightbulb.fill")
                                     .foregroundColor(.yellow)
                                     .font(.caption2)
-                                Text("수동 조정됨 — 앵커로 고정 권장")
+                                Text(L10n.Anchor.manuallyAdjustedHint(vm.lang))
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
@@ -201,29 +213,29 @@ struct BlockInspectorView: View {
                         Divider()
 
                         // Piecewise correction between anchors
-                        Button("이전 앵커 ~ 다음 앵커 재보정") {
+                        Button(L10n.Anchor.correctBetween(vm.lang)) {
                             vm.correctBetweenSurroundingAnchors()
                         }
                         .controlSize(.small)
                         .disabled(!vm.hasSurroundingAnchors)
-                        .help("양쪽 앵커 사이의 블록 타이밍을 비례 배분합니다")
+                        .help(L10n.Anchor.correctBetweenHelp(vm.lang))
 
-                        Button("전체 앵커 구간 재보정") {
+                        Button(L10n.Anchor.correctAll(vm.lang)) {
                             vm.correctBetweenAllAnchors()
                         }
                         .controlSize(.small)
                         .disabled(vm.anchorCount < 2)
-                        .help("모든 앵커 쌍 사이의 블록 타이밍을 재보정합니다")
+                        .help(L10n.Anchor.correctAllHelp(vm.lang))
 
                         Divider()
 
                         // Local re-alignment with legacy engine
-                        Button("이 구간 재정렬 (레거시 엔진)") {
+                        Button(L10n.Anchor.localRealign(vm.lang)) {
                             Task { await vm.localRealignSurroundingRegion() }
                         }
                         .controlSize(.small)
                         .disabled(!vm.project.hasVideo || !vm.whisperAvailable || vm.isAligning)
-                        .help("이전~다음 앵커 사이를 whisper-cpp로 다시 정렬합니다")
+                        .help(L10n.Anchor.localRealignHelp(vm.lang))
                     }
                 }
             }
@@ -232,7 +244,7 @@ struct BlockInspectorView: View {
                 Image(systemName: "text.cursor")
                     .font(.title)
                     .foregroundColor(.secondary)
-                Text("Select a lyric block")
+                Text(L10n.Block.selectBlock(vm.lang))
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -251,14 +263,14 @@ struct CropInspectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Crop Settings")
+            Text(L10n.Crop.settings(vm.lang))
                 .font(.headline)
 
             // Mode picker
-            GroupBox("Mode") {
+            GroupBox(L10n.Crop.mode(vm.lang)) {
                 Picker("", selection: $vm.project.cropSettings.mode) {
                     ForEach(CropMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
+                        Text(L10n.CropModeName.displayName(mode, vm.lang)).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -269,7 +281,7 @@ struct CropInspectorView: View {
 
             // 세로모드: horizontal offset (가로모드에서는 항상 중앙)
             if !isHorizontal {
-                GroupBox("Horizontal Position") {
+                GroupBox(L10n.Crop.horizontalPosition(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("L")
@@ -284,7 +296,7 @@ struct CropInspectorView: View {
                                 .foregroundColor(.secondary)
                         }
 
-                        Button("Center H") {
+                        Button(L10n.Crop.centerH(vm.lang)) {
                             vm.project.cropSettings.horizontalOffset = 0
                             vm.isDirty = true
                         }
@@ -293,7 +305,7 @@ struct CropInspectorView: View {
                 }
             }
 
-            GroupBox(isHorizontal ? "Video Position" : "Vertical Position") {
+            GroupBox(isHorizontal ? L10n.Crop.videoPosition(vm.lang) : L10n.Crop.verticalPosition(vm.lang)) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("T")
@@ -308,7 +320,7 @@ struct CropInspectorView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    Button("Center V") {
+                    Button(L10n.Crop.centerV(vm.lang)) {
                         vm.project.cropSettings.verticalOffset = 0
                         vm.isDirty = true
                     }
@@ -316,7 +328,7 @@ struct CropInspectorView: View {
                 }
             }
 
-            GroupBox("Zoom") {
+            GroupBox(L10n.Crop.zoom(vm.lang)) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("1x")
@@ -333,7 +345,7 @@ struct CropInspectorView: View {
                     }
 
                     if vm.project.cropSettings.zoomScale > 1.0 {
-                        Button("Reset Zoom") {
+                        Button(L10n.Crop.resetZoom(vm.lang)) {
                             vm.project.cropSettings.zoomScale = 1.0
                             vm.isDirty = true
                         }
@@ -344,28 +356,28 @@ struct CropInspectorView: View {
 
             // 가로모드: blur intensity
             if isHorizontal {
-                GroupBox("Blur") {
+                GroupBox(L10n.Crop.blur(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("약")
+                            Text(L10n.Crop.blurWeak(vm.lang))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                             Slider(value: $vm.project.cropSettings.blurRadius, in: 10...50, step: 1)
                                 .onChange(of: vm.project.cropSettings.blurRadius) { _, _ in
                                     vm.isDirty = true
                                 }
-                            Text("강")
+                            Text(L10n.Crop.blurStrong(vm.lang))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
-                        Text("배경 블러 강도: \(Int(vm.project.cropSettings.blurRadius))")
+                        Text(L10n.Crop.blurIntensity(vm.lang, value: Int(vm.project.cropSettings.blurRadius)))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
             }
 
-            GroupBox("Output") {
+            GroupBox(L10n.Crop.output(vm.lang)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Resolution: \(vm.project.cropSettings.outputWidth)x\(vm.project.cropSettings.outputHeight)")
                         .font(.caption)
@@ -392,11 +404,11 @@ struct StyleInspectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Subtitle Style")
+            Text(L10n.Style.subtitleStyle(vm.lang))
                 .font(.headline)
 
             // Style Presets
-            GroupBox("프리셋") {
+            GroupBox(L10n.Style.presets(vm.lang)) {
                 VStack(alignment: .leading, spacing: 8) {
                     if !presetStore.presets.isEmpty {
                         HStack {
@@ -407,25 +419,25 @@ struct StyleInspectorView: View {
                                     }
                                 }
                             } label: {
-                                Label("프리셋 적용", systemImage: "paintbrush")
+                                Label(L10n.Style.applyPreset(vm.lang), systemImage: "paintbrush")
                             }
                             .menuStyle(.borderlessButton)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     } else {
-                        Text("저장된 프리셋 없음")
+                        Text(L10n.Style.noPresets(vm.lang))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
 
                     HStack(spacing: 8) {
-                        Button("현재 스타일 저장") {
+                        Button(L10n.Style.saveCurrentStyle(vm.lang)) {
                             showSaveSheet = true
                         }
                         .controlSize(.small)
 
                         if !presetStore.presets.isEmpty {
-                            Button("관리") {
+                            Button(L10n.Style.manage(vm.lang)) {
                                 showManageSheet = true
                             }
                             .controlSize(.small)
@@ -440,7 +452,7 @@ struct StyleInspectorView: View {
                 ManagePresetsSheet(vm: vm, presetStore: presetStore)
             }
 
-            GroupBox("주 언어 폰트 (Line 1)") {
+            GroupBox(L10n.Style.primaryFont(vm.lang)) {
                 VStack(alignment: .leading, spacing: 8) {
                     FontFamilyPicker(
                         selection: $vm.project.subtitleStyle.japaneseFontFamily,
@@ -449,7 +461,7 @@ struct StyleInspectorView: View {
                     )
 
                     HStack {
-                        Text("Size:")
+                        Text(L10n.Style.size(vm.lang))
                             .frame(width: 36, alignment: .trailing)
                         Slider(value: $vm.project.subtitleStyle.japaneseFontSize, in: 24...120, step: 1)
                         Text("\(Int(vm.project.subtitleStyle.japaneseFontSize))")
@@ -464,7 +476,7 @@ struct StyleInspectorView: View {
                 }
             }
 
-            GroupBox("부 언어 폰트 (Line 2)") {
+            GroupBox(L10n.Style.secondaryFont(vm.lang)) {
                 VStack(alignment: .leading, spacing: 8) {
                     FontFamilyPicker(
                         selection: $vm.project.subtitleStyle.koreanFontFamily,
@@ -473,7 +485,7 @@ struct StyleInspectorView: View {
                     )
 
                     HStack {
-                        Text("Size:")
+                        Text(L10n.Style.size(vm.lang))
                             .frame(width: 36, alignment: .trailing)
                         Slider(value: $vm.project.subtitleStyle.koreanFontSize, in: 20...100, step: 1)
                         Text("\(Int(vm.project.subtitleStyle.koreanFontSize))")
@@ -488,10 +500,10 @@ struct StyleInspectorView: View {
                 }
             }
 
-            GroupBox("Appearance") {
+            GroupBox(L10n.Style.appearance(vm.lang)) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Outline:")
+                        Text(L10n.Style.outline(vm.lang))
                             .frame(width: 52, alignment: .trailing)
                         Slider(value: $vm.project.subtitleStyle.outlineWidth, in: 0...8, step: 0.5)
                         Text("\(String(format: "%.1f", vm.project.subtitleStyle.outlineWidth))")
@@ -499,14 +511,14 @@ struct StyleInspectorView: View {
                             .frame(width: 28)
                     }
 
-                    Toggle("Shadow", isOn: $vm.project.subtitleStyle.shadowEnabled)
+                    Toggle(L10n.Style.shadow(vm.lang), isOn: $vm.project.subtitleStyle.shadowEnabled)
                 }
             }
 
-            GroupBox("Position") {
+            GroupBox(L10n.Style.position(vm.lang)) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Bottom:")
+                        Text(L10n.Style.bottom(vm.lang))
                             .frame(width: 52, alignment: .trailing)
                         Slider(value: $vm.project.subtitleStyle.bottomMargin, in: 50...960, step: 5)
                         Text("\(Int(vm.project.subtitleStyle.bottomMargin))")
@@ -515,7 +527,7 @@ struct StyleInspectorView: View {
                     }
 
                     HStack {
-                        Text("Gap:")
+                        Text(L10n.Style.gap(vm.lang))
                             .frame(width: 52, alignment: .trailing)
                         Slider(value: $vm.project.subtitleStyle.lineSpacing, in: 0...40, step: 1)
                         Text("\(Int(vm.project.subtitleStyle.lineSpacing))")
@@ -533,6 +545,7 @@ struct StyleInspectorView: View {
 
 /// A font picker that shows recommended fonts first, then all system fonts
 struct FontFamilyPicker: View {
+    @EnvironmentObject var vm: ProjectViewModel
     @Binding var selection: String
     let recommended: [String]
     let allFonts: [String]
@@ -540,7 +553,7 @@ struct FontFamilyPicker: View {
     var body: some View {
         Picker("Font", selection: $selection) {
             if !recommended.isEmpty {
-                Section("Recommended") {
+                Section(L10n.Style.recommended(vm.lang)) {
                     ForEach(recommended, id: \.self) { font in
                         Text(font)
                             .font(.custom(font, size: 13))
@@ -550,7 +563,7 @@ struct FontFamilyPicker: View {
                 Divider()
             }
 
-            Section("All Fonts") {
+            Section(L10n.Style.allFonts(vm.lang)) {
                 ForEach(allFonts, id: \.self) { font in
                     Text(font).tag(font)
                 }
@@ -567,26 +580,26 @@ struct InfoInspectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Project Info")
+            Text(L10n.Info.projectInfo(vm.lang))
                 .font(.headline)
 
-            GroupBox("Project") {
+            GroupBox(L10n.Info.project(vm.lang)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    LabeledContent("Title") {
-                        TextField("Title", text: $vm.project.title)
+                    LabeledContent(L10n.Info.title(vm.lang)) {
+                        TextField(L10n.Info.title(vm.lang), text: $vm.project.title)
                             .textFieldStyle(.plain)
                             .onChange(of: vm.project.title) { _, _ in
                                 vm.isDirty = true
                             }
                     }
-                    LabeledContent("Created") {
+                    LabeledContent(L10n.Info.created(vm.lang)) {
                         Text(vm.project.createdAt, style: .date)
                     }
                 }
             }
 
             if vm.project.hasVideo {
-                GroupBox("Video") {
+                GroupBox(L10n.Info.video(vm.lang)) {
                     VStack(alignment: .leading, spacing: 4) {
                         if let path = vm.project.sourceVideoPath {
                             Text(URL(fileURLWithPath: path).lastPathComponent)
@@ -596,17 +609,17 @@ struct InfoInspectorView: View {
                         }
 
                         let meta = vm.project.videoMetadata
-                        LabeledContent("Resolution") {
+                        LabeledContent(L10n.Info.resolution(vm.lang)) {
                             Text("\(meta.width)x\(meta.height) (\(meta.aspectRatioString))")
                         }
-                        LabeledContent("Duration") {
+                        LabeledContent(L10n.Trim.duration(vm.lang)) {
                             Text(TimeFormatter.formatMMSS(meta.duration))
                         }
-                        LabeledContent("Frame Rate") {
+                        LabeledContent(L10n.Info.frameRate(vm.lang)) {
                             Text(String(format: "%.1f fps", meta.frameRate))
                         }
                         if meta.fileSize > 0 {
-                            LabeledContent("File Size") {
+                            LabeledContent(L10n.Info.fileSize(vm.lang)) {
                                 Text(ByteCountFormatter.string(fromByteCount: meta.fileSize, countStyle: .file))
                             }
                         }
@@ -615,21 +628,21 @@ struct InfoInspectorView: View {
                 }
             }
 
-            GroupBox("Tools") {
+            GroupBox(L10n.Info.tools(vm.lang)) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("FFmpeg:")
-                        Text(vm.ffmpegAvailable ? "Found" : "Not found")
+                        Text(vm.ffmpegAvailable ? L10n.Info.found(vm.lang) : L10n.Info.notFound(vm.lang))
                             .foregroundColor(vm.ffmpegAvailable ? .green : .red)
                     }
                     HStack {
                         Text("whisper.cpp:")
-                        Text(vm.whisperAvailable ? "Found" : "Not found")
+                        Text(vm.whisperAvailable ? L10n.Info.found(vm.lang) : L10n.Info.notFound(vm.lang))
                             .foregroundColor(vm.whisperAvailable ? .green : .red)
                     }
 
                     if !vm.ffmpegAvailable || !vm.whisperAvailable {
-                        Text("Install missing tools via Homebrew:")
+                        Text(L10n.Info.installMissing(vm.lang))
                             .font(.caption2)
                             .foregroundColor(.secondary)
                             .padding(.top, 4)
@@ -645,7 +658,7 @@ struct InfoInspectorView: View {
                         }
                     }
 
-                    Button("Recheck Tools") {
+                    Button(L10n.Info.recheckTools(vm.lang)) {
                         vm.checkToolAvailability()
                     }
                     .controlSize(.small)
@@ -664,7 +677,7 @@ struct TrimInspectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Trim Settings")
+            Text(L10n.Trim.settings(vm.lang))
                 .font(.headline)
 
             if !vm.project.hasVideo {
@@ -672,20 +685,20 @@ struct TrimInspectorView: View {
                     Image(systemName: "film")
                         .font(.title)
                         .foregroundColor(.secondary)
-                    Text("Import a video first")
+                    Text(L10n.Trim.importVideoFirst(vm.lang))
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Trim Start
-                GroupBox("Trim Start") {
+                GroupBox(L10n.Trim.trimStart(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text(TimeFormatter.format(vm.project.trimSettings.startTime))
                                 .monospacedDigit()
                                 .font(.title3)
                             Spacer()
-                            Button("Set to Current") {
+                            Button(L10n.Trim.setToCurrent(vm.lang)) {
                                 vm.setTrimStartToCurrent()
                             }
                             .controlSize(.small)
@@ -702,14 +715,14 @@ struct TrimInspectorView: View {
                 }
 
                 // Trim End
-                GroupBox("Trim End") {
+                GroupBox(L10n.Trim.trimEnd(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text(TimeFormatter.format(vm.project.trimSettings.endTime))
                                 .monospacedDigit()
                                 .font(.title3)
                             Spacer()
-                            Button("Set to Current") {
+                            Button(L10n.Trim.setToCurrent(vm.lang)) {
                                 vm.setTrimEndToCurrent()
                             }
                             .controlSize(.small)
@@ -726,13 +739,13 @@ struct TrimInspectorView: View {
                 }
 
                 // Summary
-                GroupBox("Output") {
+                GroupBox(L10n.Crop.output(vm.lang)) {
                     VStack(alignment: .leading, spacing: 4) {
-                        LabeledContent("Duration") {
+                        LabeledContent(L10n.Trim.duration(vm.lang)) {
                             Text(TimeFormatter.formatMMSS(vm.trimmedDuration))
                                 .monospacedDigit()
                         }
-                        LabeledContent("Range") {
+                        LabeledContent(L10n.Trim.range(vm.lang)) {
                             Text("\(TimeFormatter.format(vm.project.trimSettings.startTime)) — \(TimeFormatter.format(vm.project.trimSettings.endTime))")
                                 .monospacedDigit()
                                 .font(.caption)
@@ -747,7 +760,7 @@ struct TrimInspectorView: View {
                     .padding(.top, 4)
 
                 // Reset
-                Button("Reset Trim (Full Duration)") {
+                Button(L10n.Trim.resetTrim(vm.lang)) {
                     vm.resetTrim()
                 }
                 .controlSize(.small)
@@ -859,18 +872,18 @@ struct MetadataOverlayInspectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Title / Artist Overlay")
+            Text(L10n.Overlay.title(vm.lang))
                 .font(.headline)
 
-            Toggle("Enable Overlay", isOn: $vm.project.metadataOverlay.isEnabled)
+            Toggle(L10n.Overlay.enableOverlay(vm.lang), isOn: $vm.project.metadataOverlay.isEnabled)
 
             if vm.project.metadataOverlay.isEnabled {
-                GroupBox("Title") {
+                GroupBox(L10n.Overlay.titleLabel(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField("Song title", text: $vm.project.metadataOverlay.titleText)
+                        TextField(L10n.Overlay.songTitle(vm.lang), text: $vm.project.metadataOverlay.titleText)
                             .textFieldStyle(.roundedBorder)
 
-                        Picker("Font", selection: $vm.project.metadataOverlay.titleFontFamily) {
+                        Picker(L10n.Overlay.font(vm.lang), selection: $vm.project.metadataOverlay.titleFontFamily) {
                             ForEach(allFonts, id: \.self) { font in
                                 Text(font).tag(font)
                             }
@@ -878,7 +891,7 @@ struct MetadataOverlayInspectorView: View {
                         .labelsHidden()
 
                         HStack {
-                            Text("Size:")
+                            Text(L10n.Style.size(vm.lang))
                                 .frame(width: 36, alignment: .trailing)
                             Slider(value: $vm.project.metadataOverlay.titleFontSize, in: 20...100, step: 1)
                             Text("\(Int(vm.project.metadataOverlay.titleFontSize))")
@@ -893,12 +906,12 @@ struct MetadataOverlayInspectorView: View {
                     }
                 }
 
-                GroupBox("Artist") {
+                GroupBox(L10n.Overlay.artist(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField("Artist name", text: $vm.project.metadataOverlay.artistText)
+                        TextField(L10n.Overlay.artistName(vm.lang), text: $vm.project.metadataOverlay.artistText)
                             .textFieldStyle(.roundedBorder)
 
-                        Picker("Font", selection: $vm.project.metadataOverlay.artistFontFamily) {
+                        Picker(L10n.Overlay.font(vm.lang), selection: $vm.project.metadataOverlay.artistFontFamily) {
                             ForEach(allFonts, id: \.self) { font in
                                 Text(font).tag(font)
                             }
@@ -906,7 +919,7 @@ struct MetadataOverlayInspectorView: View {
                         .labelsHidden()
 
                         HStack {
-                            Text("Size:")
+                            Text(L10n.Style.size(vm.lang))
                                 .frame(width: 36, alignment: .trailing)
                             Slider(value: $vm.project.metadataOverlay.artistFontSize, in: 16...72, step: 1)
                             Text("\(Int(vm.project.metadataOverlay.artistFontSize))")
@@ -921,10 +934,10 @@ struct MetadataOverlayInspectorView: View {
                     }
                 }
 
-                GroupBox("Background") {
+                GroupBox(L10n.Overlay.background(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("Opacity:")
+                            Text(L10n.Overlay.opacity(vm.lang))
                                 .frame(width: 52, alignment: .trailing)
                             Slider(value: $vm.project.metadataOverlay.backgroundOpacity, in: 0...1, step: 0.05)
                             Text("\(Int(vm.project.metadataOverlay.backgroundOpacity * 100))%")
@@ -933,7 +946,7 @@ struct MetadataOverlayInspectorView: View {
                         }
 
                         HStack {
-                            Text("Radius:")
+                            Text(L10n.Overlay.radius(vm.lang))
                                 .frame(width: 52, alignment: .trailing)
                             Slider(value: $vm.project.metadataOverlay.cornerRadius, in: 0...30, step: 1)
                             Text("\(Int(vm.project.metadataOverlay.cornerRadius))")
@@ -943,10 +956,10 @@ struct MetadataOverlayInspectorView: View {
                     }
                 }
 
-                GroupBox("Position") {
+                GroupBox(L10n.Style.position(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("Top:")
+                            Text(L10n.Overlay.top(vm.lang))
                                 .frame(width: 36, alignment: .trailing)
                             Slider(value: $vm.project.metadataOverlay.topMargin, in: 20...400, step: 5)
                             Text("\(Int(vm.project.metadataOverlay.topMargin))")
@@ -955,7 +968,7 @@ struct MetadataOverlayInspectorView: View {
                         }
 
                         HStack {
-                            Text("Left:")
+                            Text(L10n.Overlay.left(vm.lang))
                                 .frame(width: 36, alignment: .trailing)
                             Slider(value: $vm.project.metadataOverlay.leftMargin, in: 20...300, step: 5)
                             Text("\(Int(vm.project.metadataOverlay.leftMargin))")
@@ -965,7 +978,7 @@ struct MetadataOverlayInspectorView: View {
                     }
                 }
 
-                GroupBox("Padding") {
+                GroupBox(L10n.Overlay.padding(vm.lang)) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("H:")
@@ -986,7 +999,7 @@ struct MetadataOverlayInspectorView: View {
                         }
 
                         HStack {
-                            Text("Gap:")
+                            Text(L10n.Style.gap(vm.lang))
                                 .frame(width: 36, alignment: .trailing)
                             Slider(value: $vm.project.metadataOverlay.lineSpacing, in: 0...20, step: 1)
                             Text("\(Int(vm.project.metadataOverlay.lineSpacing))")
@@ -1006,16 +1019,24 @@ struct MetadataOverlayInspectorView: View {
 // MARK: - Subtitle Color Picker
 
 struct SubtitleColorPicker: View {
+    @EnvironmentObject var vm: ProjectViewModel
     let label: String
     @Binding var hexColor: String
 
-    private static let presets: [(String, String)] = [
-        ("White", "#FFFFFF"),
-        ("Cyan", "#E0FFFF"),
-        ("Yellow", "#FFFACD"),
-        ("Mint", "#BDFCC9"),
-        ("Pink", "#FFB6C1"),
+    private static let presetHexes: [String] = [
+        "#FFFFFF", "#E0FFFF", "#FFFACD", "#BDFCC9", "#FFB6C1",
     ]
+
+    private func colorName(for hex: String) -> String {
+        switch hex {
+        case "#FFFFFF": return L10n.Style.colorWhite(vm.lang)
+        case "#E0FFFF": return L10n.Style.colorCyan(vm.lang)
+        case "#FFFACD": return L10n.Style.colorYellow(vm.lang)
+        case "#BDFCC9": return L10n.Style.colorMint(vm.lang)
+        case "#FFB6C1": return L10n.Style.colorPink(vm.lang)
+        default: return hex
+        }
+    }
 
     var body: some View {
         HStack {
@@ -1035,7 +1056,7 @@ struct SubtitleColorPicker: View {
             .labelsHidden()
             .frame(width: 28)
 
-            ForEach(Self.presets, id: \.1) { name, hex in
+            ForEach(Self.presetHexes, id: \.self) { hex in
                 Button {
                     hexColor = hex
                 } label: {
@@ -1047,7 +1068,7 @@ struct SubtitleColorPicker: View {
                         .frame(width: 16, height: 16)
                 }
                 .buttonStyle(.plain)
-                .help(name)
+                .help(colorName(for: hex))
             }
         }
     }
@@ -1064,10 +1085,10 @@ struct SavePresetSheet: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("현재 스타일을 프리셋으로 저장")
+            Text(L10n.Preset.saveTitle(vm.lang))
                 .font(.headline)
 
-            TextField("프리셋 이름", text: $presetName)
+            TextField(L10n.Preset.presetName(vm.lang), text: $presetName)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 280)
                 .onSubmit { save() }
@@ -1078,16 +1099,16 @@ struct SavePresetSheet: View {
                     .foregroundColor(.red)
             }
 
-            Text("자막 스타일과 오버레이 스타일이 저장됩니다.\n곡 제목/아티스트 텍스트는 포함되지 않습니다.")
+            Text(L10n.Preset.saveNote(vm.lang))
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
 
             HStack(spacing: 12) {
-                Button("취소") { dismiss() }
+                Button(L10n.Common.cancel(vm.lang)) { dismiss() }
                     .keyboardShortcut(.cancelAction)
 
-                Button("저장") { save() }
+                Button(L10n.Common.save(vm.lang)) { save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(presetName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
@@ -1099,11 +1120,11 @@ struct SavePresetSheet: View {
     private func save() {
         let trimmed = presetName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
-            errorText = "이름을 입력하세요."
+            errorText = L10n.Preset.enterName(vm.lang)
             return
         }
         if presetStore.nameExists(trimmed) {
-            errorText = "이미 같은 이름의 프리셋이 있습니다."
+            errorText = L10n.Preset.duplicateName(vm.lang)
             return
         }
         vm.saveCurrentStyleAsPreset(name: trimmed)
@@ -1123,10 +1144,10 @@ struct ManagePresetsSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("프리셋 관리")
+                Text(L10n.Preset.manageTitle(vm.lang))
                     .font(.headline)
                 Spacer()
-                Button("닫기") { dismiss() }
+                Button(L10n.Common.close(vm.lang)) { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
             .padding()
@@ -1135,7 +1156,7 @@ struct ManagePresetsSheet: View {
 
             if presetStore.presets.isEmpty {
                 VStack(spacing: 8) {
-                    Text("저장된 프리셋이 없습니다.")
+                    Text(L10n.Preset.noPresetsStored(vm.lang))
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1180,6 +1201,7 @@ struct ManagePresetsSheet: View {
 }
 
 struct PresetRow: View {
+    @EnvironmentObject var vm: ProjectViewModel
     let preset: StylePreset
     let isEditing: Bool
     @Binding var editName: String
@@ -1193,13 +1215,13 @@ struct PresetRow: View {
     var body: some View {
         HStack {
             if isEditing {
-                TextField("이름", text: $editName)
+                TextField(L10n.Preset.name(vm.lang), text: $editName)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { onConfirmRename() }
 
-                Button("확인") { onConfirmRename() }
+                Button(L10n.Common.ok(vm.lang)) { onConfirmRename() }
                     .controlSize(.small)
-                Button("취소") { onCancelRename() }
+                Button(L10n.Common.cancel(vm.lang)) { onCancelRename() }
                     .controlSize(.small)
             } else {
                 VStack(alignment: .leading, spacing: 2) {
@@ -1212,14 +1234,14 @@ struct PresetRow: View {
 
                 Spacer()
 
-                Button("적용") { onApply() }
+                Button(L10n.Preset.apply(vm.lang)) { onApply() }
                     .controlSize(.small)
 
                 Menu {
-                    Button("이름 변경") { onStartRename() }
-                    Button("복제") { onDuplicate() }
+                    Button(L10n.Preset.rename(vm.lang)) { onStartRename() }
+                    Button(L10n.Preset.duplicate(vm.lang)) { onDuplicate() }
                     Divider()
-                    Button("삭제", role: .destructive) { onDelete() }
+                    Button(L10n.Common.delete(vm.lang), role: .destructive) { onDelete() }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -1238,10 +1260,10 @@ struct IgnoreRegionsInspectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("무시 구간")
+            Text(L10n.Ignore.title(vm.lang))
                 .font(.headline)
 
-            Text("음성 인식에서 제외할 구간을 설정합니다.\n(MC 멘트, 관객 대화 등)")
+            Text(L10n.Ignore.help(vm.lang))
                 .font(.caption)
                 .foregroundColor(.secondary)
 
@@ -1249,7 +1271,7 @@ struct IgnoreRegionsInspectorView: View {
             Button {
                 vm.addIgnoreRegionAtCurrentTime()
             } label: {
-                Label("현재 위치에 무시 구간 추가", systemImage: "plus.circle")
+                Label(L10n.Ignore.addAtCurrent(vm.lang), systemImage: "plus.circle")
             }
             .controlSize(.small)
             .disabled(!vm.project.hasVideo)
@@ -1259,7 +1281,7 @@ struct IgnoreRegionsInspectorView: View {
                     Image(systemName: "speaker.slash")
                         .font(.title)
                         .foregroundColor(.secondary)
-                    Text("설정된 무시 구간이 없습니다")
+                    Text(L10n.Ignore.noRegions(vm.lang))
                         .foregroundColor(.secondary)
                         .font(.caption)
                 }
@@ -1286,14 +1308,14 @@ struct IgnoreRegionRowView: View {
                 // Header with label and delete
                 HStack {
                     if isEditingLabel {
-                        TextField("라벨", text: $editingLabel, onCommit: {
+                        TextField(L10n.Ignore.label(vm.lang), text: $editingLabel, onCommit: {
                             vm.updateIgnoreRegion(id: region.id, label: editingLabel)
                             isEditingLabel = false
                         })
                         .textFieldStyle(.roundedBorder)
                         .font(.caption)
                     } else {
-                        Text(region.label.isEmpty ? "무시 구간" : region.label)
+                        Text(region.label.isEmpty ? L10n.Ignore.ignoreRegion(vm.lang) : region.label)
                             .font(.caption.bold())
                             .onTapGesture {
                                 editingLabel = region.label
@@ -1313,7 +1335,7 @@ struct IgnoreRegionRowView: View {
 
                 // Start time
                 HStack {
-                    Text("시작")
+                    Text(L10n.Ignore.startLabel(vm.lang))
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .frame(width: 30, alignment: .leading)
@@ -1321,7 +1343,7 @@ struct IgnoreRegionRowView: View {
                         .monospacedDigit()
                         .font(.caption)
                     Spacer()
-                    Button("현재") {
+                    Button(L10n.Ignore.current(vm.lang)) {
                         vm.updateIgnoreRegion(id: region.id, startTime: vm.currentTime)
                     }
                     .controlSize(.mini)
@@ -1336,7 +1358,7 @@ struct IgnoreRegionRowView: View {
 
                 // End time
                 HStack {
-                    Text("종료")
+                    Text(L10n.Ignore.endLabel(vm.lang))
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .frame(width: 30, alignment: .leading)
@@ -1344,7 +1366,7 @@ struct IgnoreRegionRowView: View {
                         .monospacedDigit()
                         .font(.caption)
                     Spacer()
-                    Button("현재") {
+                    Button(L10n.Ignore.current(vm.lang)) {
                         vm.updateIgnoreRegion(id: region.id, endTime: vm.currentTime)
                     }
                     .controlSize(.mini)
@@ -1359,11 +1381,11 @@ struct IgnoreRegionRowView: View {
 
                 // Duration display
                 HStack {
-                    Text("길이: \(TimeFormatter.formatMMSS(region.duration))")
+                    Text(L10n.Ignore.length(vm.lang, time: TimeFormatter.formatMMSS(region.duration)))
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Button("이 구간으로 이동") {
+                    Button(L10n.Ignore.seekToRegion(vm.lang)) {
                         vm.seek(to: region.startTime)
                     }
                     .controlSize(.mini)

@@ -5,6 +5,17 @@ import SwiftUI
 
 @MainActor
 class ProjectViewModel: ObservableObject {
+    // MARK: - UI Language
+    @Published var uiLanguage: UILanguage = {
+        let raw = UserDefaults.standard.string(forKey: "uiLanguage") ?? "ko"
+        return UILanguage(rawValue: raw) ?? .ko
+    }() {
+        didSet { UserDefaults.standard.set(uiLanguage.rawValue, forKey: "uiLanguage") }
+    }
+
+    /// Shorthand for current UI language
+    var lang: UILanguage { uiLanguage }
+
     // MARK: - Project State
     @Published var project: Project = Project()
     @Published var projectFileURL: URL?
@@ -88,7 +99,7 @@ class ProjectViewModel: ObservableObject {
     func downloadFromURL(_ urlString: String) async {
         let provider = YouTubeDownloadRegistry.provider
         guard provider.isEnabled else {
-            showError("이 기능은 현재 비활성화 상태입니다.")
+            showError(L10n.Status.featureDisabled(lang))
             return
         }
 
@@ -380,7 +391,7 @@ class ProjectViewModel: ObservableObject {
         project.ignoreRegions.sort { $0.startTime < $1.startTime }
         project.touch()
         isDirty = true
-        statusMessage = "무시 구간 추가됨: \(TimeFormatter.formatMMSS(startTime))–\(TimeFormatter.formatMMSS(endTime))"
+        statusMessage = L10n.Status.ignoreRegionAdded(lang, from: TimeFormatter.formatMMSS(startTime), to: TimeFormatter.formatMMSS(endTime))
     }
 
     func removeIgnoreRegion(id: UUID) {
@@ -462,7 +473,7 @@ class ProjectViewModel: ObservableObject {
         project.lyricBlocks[idx].isUserAnchor = true
         project.touch()
         isDirty = true
-        statusMessage = "블록 #\(idx + 1) 앵커 고정"
+        statusMessage = L10n.Status.anchorSet(lang, index: idx + 1)
     }
 
     func unsetAnchor(id: UUID) {
@@ -471,7 +482,7 @@ class ProjectViewModel: ObservableObject {
         project.lyricBlocks[idx].isUserAnchor = false
         project.touch()
         isDirty = true
-        statusMessage = "블록 #\(idx + 1) 앵커 해제"
+        statusMessage = L10n.Status.anchorReleased(lang, index: idx + 1)
     }
 
     // MARK: - Piecewise Correction Between Anchors
@@ -488,7 +499,7 @@ class ProjectViewModel: ObservableObject {
         }
 
         guard anchorIndices.count >= 2 else {
-            showError("앵커가 2개 이상 필요합니다. 타이밍을 수정한 줄을 앵커로 고정하세요.")
+            showError(L10n.Status.needTwoAnchors(lang))
             return
         }
 
@@ -503,7 +514,7 @@ class ProjectViewModel: ObservableObject {
 
         project.touch()
         isDirty = true
-        statusMessage = "앵커 \(anchorIndices.count)개 사이 \(totalCorrected)개 블록 재보정 완료"
+        statusMessage = L10n.Status.allCorrectionDone(lang, anchors: anchorIndices.count, blocks: totalCorrected)
         print("[AnchorCorrection] Corrected \(totalCorrected) blocks across \(anchorIndices.count - 1) segments")
     }
 
@@ -514,14 +525,14 @@ class ProjectViewModel: ObservableObject {
         let (leftOpt, rightOpt) = surroundingAnchorIndices(for: idx)
 
         guard let left = leftOpt, let right = rightOpt else {
-            showError("선택한 블록 양쪽에 앵커가 필요합니다.")
+            showError(L10n.Status.needSurroundingAnchors(lang))
             return
         }
 
         let corrected = correctSegmentBetween(leftAnchorIdx: left, rightAnchorIdx: right)
         project.touch()
         isDirty = true
-        statusMessage = "앵커 #\(left + 1) ~ #\(right + 1) 사이 \(corrected)개 블록 재보정 완료"
+        statusMessage = L10n.Status.regionCorrectionDone(lang, left: left + 1, right: right + 1, count: corrected)
     }
 
     /// Core piecewise correction: distribute time proportionally between two anchors.
@@ -631,16 +642,16 @@ class ProjectViewModel: ObservableObject {
     func localRealignRange(fromIndex: Int, toIndex: Int) async {
         guard fromIndex >= 0, toIndex < project.lyricBlocks.count, fromIndex <= toIndex else { return }
         guard project.hasVideo else {
-            showError("비디오를 먼저 가져오세요.")
+            showError(L10n.Status.importVideoFirst(lang))
             return
         }
         guard ffmpegAvailable, whisperAvailable else {
-            showError("FFmpeg과 whisper-cpp가 필요합니다.")
+            showError(L10n.Status.needTools(lang))
             return
         }
 
         isAligning = true
-        alignmentProgress = "구간 재정렬 준비 중..."
+        alignmentProgress = L10n.Status.preparingRealign(lang)
 
         defer {
             isAligning = false
@@ -650,7 +661,7 @@ class ProjectViewModel: ObservableObject {
         do {
             // Ensure we have whisper segments (cached or freshly transcribed)
             if cachedWhisperSegments.isEmpty {
-                alignmentProgress = "오디오 추출 중..."
+                alignmentProgress = L10n.Status.extractingAudio(lang)
                 let tempDir = NSTemporaryDirectory()
                 let audioURL = URL(fileURLWithPath: tempDir + "audio_\(project.id.uuidString).wav")
 
@@ -659,7 +670,7 @@ class ProjectViewModel: ObservableObject {
                     to: audioURL
                 )
 
-                alignmentProgress = "음성 인식 중..."
+                alignmentProgress = L10n.Status.recognizingSpeech(lang)
                 cachedWhisperSegments = try await WhisperAlignmentService.transcribe(
                     audioURL: audioURL,
                     language: project.primaryLanguage.whisperLanguageFlag
@@ -688,7 +699,7 @@ class ProjectViewModel: ObservableObject {
                 timeAfter = duration
             }
 
-            alignmentProgress = "블록 \(fromIndex + 1)–\(toIndex + 1) 재정렬 중..."
+            alignmentProgress = L10n.Status.realigning(lang, from: fromIndex + 1, to: toIndex + 1)
 
             // Run bounded local re-alignment via legacy engine
             let updated = WhisperAlignmentService.realignRegion(
@@ -707,7 +718,7 @@ class ProjectViewModel: ObservableObject {
             project.touch()
             isDirty = true
 
-            statusMessage = "블록 \(fromIndex + 1)–\(toIndex + 1) 구간 재정렬 완료"
+            statusMessage = L10n.Status.realignComplete(lang, from: fromIndex + 1, to: toIndex + 1)
 
         } catch {
             showError(error.localizedDescription)
@@ -997,7 +1008,7 @@ class ProjectViewModel: ObservableObject {
         preset.overlayStyle.apply(to: &project.metadataOverlay)
         project.touch()
         isDirty = true
-        statusMessage = "프리셋 적용됨: \(preset.name)"
+        statusMessage = L10n.Status.presetApplied(lang, name: preset.name)
     }
 
     /// Save the current project style as a new named preset.
@@ -1008,7 +1019,7 @@ class ProjectViewModel: ObservableObject {
             subtitleStyle: project.subtitleStyle,
             metadataOverlay: project.metadataOverlay
         )
-        statusMessage = "프리셋 저장됨: \(name)"
+        statusMessage = L10n.Status.presetSaved(lang, name: name)
         return preset
     }
 

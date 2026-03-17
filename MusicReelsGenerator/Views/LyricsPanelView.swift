@@ -8,10 +8,10 @@ struct LyricsPanelView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Text("Lyrics")
+                Text(L10n.Lyrics.lyrics(vm.lang))
                     .font(.headline)
                 Spacer()
-                Text("\(vm.project.lyricBlocks.count) blocks")
+                Text(L10n.Lyrics.blocks(vm.lang, count: vm.project.lyricBlocks.count))
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Button {
@@ -20,7 +20,7 @@ struct LyricsPanelView: View {
                     Image(systemName: "plus.circle")
                 }
                 .buttonStyle(.borderless)
-                .help("Paste/Edit Lyrics")
+                .help(L10n.Lyrics.pasteEdit(vm.lang))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -48,10 +48,10 @@ struct LyricsPanelView: View {
             Image(systemName: "text.quote")
                 .font(.system(size: 40))
                 .foregroundColor(.secondary)
-            Text("No lyrics yet")
+            Text(L10n.Lyrics.noLyrics(vm.lang))
                 .font(.title3)
                 .foregroundColor(.secondary)
-            Button("Paste Lyrics") {
+            Button(L10n.Lyrics.pasteLyrics(vm.lang)) {
                 showLyricsInput = true
             }
             Spacer()
@@ -84,6 +84,7 @@ struct LyricsPanelView: View {
 }
 
 struct LyricBlockRow: View {
+    @EnvironmentObject var vm: ProjectViewModel
     let block: LyricBlock
     let index: Int
     let isActive: Bool
@@ -129,7 +130,7 @@ struct LyricBlockRow: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             } else {
-                Text("No timing")
+                Text(L10n.Block.noTiming(vm.lang))
                     .font(.caption2)
                     .foregroundColor(.orange)
             }
@@ -148,6 +149,7 @@ struct LyricBlockRow: View {
 }
 
 struct ConfidenceBadge: View {
+    @EnvironmentObject var vm: ProjectViewModel
     let confidence: Double
     let isManual: Bool
 
@@ -159,7 +161,7 @@ struct ConfidenceBadge: View {
     }
 
     var label: String {
-        if isManual { return "Manual" }
+        if isManual { return L10n.Block.manual(vm.lang) }
         return "\(Int(confidence * 100))%"
     }
 
@@ -175,16 +177,17 @@ struct ConfidenceBadge: View {
 }
 
 struct LyricsInputSheet: View {
+    @EnvironmentObject var vm: ProjectViewModel
     @Binding var text: String
     let onConfirm: () -> Void
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("Paste Bilingual Lyrics")
+            Text(L10n.Lyrics.pasteBilingual(vm.lang))
                 .font(.headline)
 
-            Text("블록 사이는 빈 줄로 구분합니다. 주 언어만 입력하거나, 주 언어 + 부 언어 2줄로 입력할 수 있습니다.")
+            Text(L10n.Lyrics.formatHelp(vm.lang))
                 .font(.caption)
                 .foregroundColor(.secondary)
 
@@ -193,10 +196,10 @@ struct LyricsInputSheet: View {
                 .border(Color.secondary.opacity(0.3))
 
             HStack {
-                Button("Cancel") { dismiss() }
+                Button(L10n.Common.cancel(vm.lang)) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Parse & Import") { onConfirm() }
+                Button(L10n.Lyrics.parseImport(vm.lang)) { onConfirm() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

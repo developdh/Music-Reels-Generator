@@ -16,14 +16,16 @@ final class CheckForUpdatesViewModel: ObservableObject {
 struct CheckForUpdatesView: View {
     @ObservedObject private var checkForUpdatesViewModel: CheckForUpdatesViewModel
     private let updater: SPUUpdater
+    let title: String
 
-    init(updater: SPUUpdater) {
+    init(updater: SPUUpdater, title: String = "Check for Updates…") {
         self.updater = updater
         self.checkForUpdatesViewModel = CheckForUpdatesViewModel(updater: updater)
+        self.title = title
     }
 
     var body: some View {
-        Button("Check for Updates…", action: updater.checkForUpdates)
+        Button(title, action: updater.checkForUpdates)
             .disabled(!checkForUpdatesViewModel.canCheckForUpdates)
     }
 }
@@ -88,32 +90,32 @@ struct MusicReelsGeneratorApp: App {
         .commands {
             TextEditingCommands()
             CommandGroup(after: .appInfo) {
-                CheckForUpdatesView(updater: updaterController.updater)
+                CheckForUpdatesView(updater: updaterController.updater, title: L10n.Menu.checkForUpdates(viewModel.lang))
             }
             CommandGroup(replacing: .newItem) {
-                Button("New Project") {
+                Button(L10n.Menu.newProject(viewModel.lang)) {
                     viewModel.newProject()
                 }
                 .keyboardShortcut("n", modifiers: .command)
 
-                Button("Open Project...") {
+                Button(L10n.Menu.openProject(viewModel.lang)) {
                     openProject()
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
-                Button("Save Project") {
+                Button(L10n.Menu.saveProject(viewModel.lang)) {
                     save()
                 }
                 .keyboardShortcut("s", modifiers: .command)
 
-                Button("Save Project As...") {
+                Button(L10n.Menu.saveProjectAs(viewModel.lang)) {
                     saveProjectAs()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("Import Video...") {
+                Button(L10n.Menu.importVideo(viewModel.lang)) {
                     importVideo()
                 }
                 .keyboardShortcut("i", modifiers: .command)

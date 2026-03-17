@@ -11,7 +11,7 @@ struct URLImportSheet: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("URL Import")
+            Text(L10n.URLImport.title(vm.lang))
                 .font(.headline)
 
             if provider.isEnabled {
@@ -26,7 +26,7 @@ struct URLImportSheet: View {
 
     private var enabledContent: some View {
         VStack(spacing: 12) {
-            Text("Enter a video URL to download and import.")
+            Text(L10n.URLImport.enterURL(vm.lang))
                 .font(.caption)
                 .foregroundColor(.secondary)
 
@@ -40,7 +40,7 @@ struct URLImportSheet: View {
             case .validating:
                 HStack {
                     ProgressView().controlSize(.small)
-                    Text("Validating...")
+                    Text(L10n.URLImport.validating(vm.lang))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -62,13 +62,13 @@ struct URLImportSheet: View {
                 HStack {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
-                    Text("Download complete, importing...")
+                    Text(L10n.URLImport.downloadComplete(vm.lang))
                         .font(.caption)
                 }
             }
 
             HStack {
-                Button("Cancel") {
+                Button(L10n.Common.cancel(vm.lang)) {
                     vm.youtubeDownloadState = .idle
                     dismiss()
                 }
@@ -76,7 +76,7 @@ struct URLImportSheet: View {
 
                 Spacer()
 
-                Button("Download & Import") {
+                Button(L10n.URLImport.downloadImport(vm.lang)) {
                     Task { await vm.downloadFromURL(urlText) }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -91,10 +91,10 @@ struct URLImportSheet: View {
                 .font(.system(size: 32))
                 .foregroundColor(.orange)
 
-            Text("이 기능은 현재 비활성화 상태입니다.")
+            Text(L10n.URLImport.disabled(vm.lang))
                 .font(.body)
 
-            Text("yt_download.sh 스크립트를 아래 경로에 설치하세요:")
+            Text(L10n.URLImport.installScript(vm.lang))
                 .font(.caption)
                 .foregroundColor(.secondary)
 
@@ -103,7 +103,7 @@ struct URLImportSheet: View {
                 .foregroundColor(.secondary)
                 .textSelection(.enabled)
 
-            Button("OK") { dismiss() }
+            Button(L10n.Common.ok(vm.lang)) { dismiss() }
                 .keyboardShortcut(.cancelAction)
         }
     }

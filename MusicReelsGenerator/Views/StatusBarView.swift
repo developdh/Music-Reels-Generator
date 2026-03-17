@@ -12,15 +12,15 @@ struct StatusBarView: View {
             case .preparing:
                 ProgressView()
                     .controlSize(.mini)
-                Text("Preparing export...")
+                Text(L10n.Status.preparingExport(vm.lang))
             case .exporting(let progress):
                 ProgressView(value: progress)
                     .frame(width: 100)
-                Text("Exporting...")
+                Text(L10n.Status.exporting(vm.lang))
             case .completed:
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.green)
-                Text("Export complete")
+                Text(L10n.Status.exportComplete(vm.lang))
             case .failed(let msg):
                 Image(systemName: "xmark.circle.fill")
                     .foregroundColor(.red)
@@ -42,7 +42,7 @@ struct StatusBarView: View {
                 Circle()
                     .fill(Color.orange)
                     .frame(width: 8, height: 8)
-                    .help("Unsaved changes")
+                    .help(L10n.Status.unsavedChanges(vm.lang))
             }
         }
         .padding(.horizontal, 12)

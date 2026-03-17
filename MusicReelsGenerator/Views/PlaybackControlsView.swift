@@ -58,13 +58,13 @@ struct PlaybackControlsView: View {
                     Image(systemName: "gobackward.5")
                 }
                 .keyboardShortcut(.leftArrow, modifiers: .command)
-                .help("Back 5s (Cmd+Left)")
+                .help(L10n.Playback.back5s(vm.lang))
 
                 // Step back 1s
                 Button { vm.stepBackward(seconds: 1) } label: {
                     Image(systemName: "gobackward")
                 }
-                .help("Back 1s")
+                .help(L10n.Playback.back1s(vm.lang))
 
                 // Play/Pause
                 Button { vm.togglePlayback() } label: {
@@ -72,20 +72,20 @@ struct PlaybackControlsView: View {
                         .font(.title2)
                 }
                 .keyboardShortcut(.space, modifiers: [])
-                .help("Play/Pause (Space)")
+                .help(L10n.Playback.playPause(vm.lang))
 
                 // Step forward 1s
                 Button { vm.stepForward(seconds: 1) } label: {
                     Image(systemName: "goforward")
                 }
-                .help("Forward 1s")
+                .help(L10n.Playback.forward1s(vm.lang))
 
                 // Step forward 5s
                 Button { vm.stepForward(seconds: 5) } label: {
                     Image(systemName: "goforward.5")
                 }
                 .keyboardShortcut(.rightArrow, modifiers: .command)
-                .help("Forward 5s (Cmd+Right)")
+                .help(L10n.Playback.forward5s(vm.lang))
 
                 Divider().frame(height: 20)
 
@@ -93,20 +93,20 @@ struct PlaybackControlsView: View {
                 Button {
                     vm.setStartTimeToCurrent()
                 } label: {
-                    Label("Set Start", systemImage: "arrow.right.to.line")
+                    Label(L10n.Playback.setStart(vm.lang), systemImage: "arrow.right.to.line")
                 }
                 .disabled(vm.selectedBlockID == nil)
                 .keyboardShortcut("[", modifiers: .command)
-                .help("Set block start to current time (Cmd+[)")
+                .help(L10n.Playback.setStartHelp(vm.lang))
 
                 Button {
                     vm.setEndTimeToCurrent()
                 } label: {
-                    Label("Set End", systemImage: "arrow.left.to.line")
+                    Label(L10n.Playback.setEnd(vm.lang), systemImage: "arrow.left.to.line")
                 }
                 .disabled(vm.selectedBlockID == nil)
                 .keyboardShortcut("]", modifiers: .command)
-                .help("Set block end to current time (Cmd+])")
+                .help(L10n.Playback.setEndHelp(vm.lang))
 
                 // Hidden: block navigation (Cmd+Up/Down)
                 Button { vm.selectPreviousBlock() } label: { EmptyView() }

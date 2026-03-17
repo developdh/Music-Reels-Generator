@@ -5,13 +5,6 @@ enum CropMode: String, Codable, CaseIterable, Identifiable {
     case horizontal = "horizontal" // 가로모드: fit + blur background
 
     var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .vertical: return "세로모드"
-        case .horizontal: return "가로모드"
-        }
-    }
 }
 
 struct CropSettings: Codable, Equatable {

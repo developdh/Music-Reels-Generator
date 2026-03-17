@@ -66,9 +66,9 @@ struct VideoPreviewView: View {
                     Image(systemName: "film")
                         .font(.system(size: 48))
                         .foregroundColor(.secondary)
-                    Text("Import a video to get started")
+                    Text(L10n.Preview.importToStart(vm.lang))
                         .foregroundColor(.secondary)
-                    Text("File > Import Video or click 'Import Video' above")
+                    Text(L10n.Preview.importHint(vm.lang))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

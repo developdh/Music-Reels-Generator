@@ -10,13 +10,13 @@ struct ToolbarView: View {
             Button {
                 importVideo()
             } label: {
-                Label("Import Video", systemImage: "film.fill")
+                Label(L10n.Toolbar.importVideo(vm.lang), systemImage: "film.fill")
             }
 
             Button {
                 vm.showURLImportSheet = true
             } label: {
-                Label("URL Import", systemImage: "link.badge.plus")
+                Label(L10n.Toolbar.urlImport(vm.lang), systemImage: "link.badge.plus")
             }
 
             Divider().frame(height: 20)
@@ -24,11 +24,11 @@ struct ToolbarView: View {
             // Primary language
             Picker("", selection: $vm.project.primaryLanguage) {
                 ForEach(PrimaryLanguage.allCases) { lang in
-                    Text(lang.displayName).tag(lang)
+                    Text(L10n.PrimaryLang.displayName(lang, vm.lang)).tag(lang)
                 }
             }
             .frame(width: 120)
-            .help("주 언어 설정 (음성 인식 언어)")
+            .help(L10n.Toolbar.languageHelp(vm.lang))
             .onChange(of: vm.project.primaryLanguage) { _, _ in
                 vm.project.touch()
                 vm.isDirty = true
@@ -56,9 +56,9 @@ struct ToolbarView: View {
                     ProgressView()
                         .controlSize(.small)
                         .padding(.trailing, 4)
-                    Text("Aligning...")
+                    Text(L10n.Toolbar.aligning(vm.lang))
                 } else {
-                    Label("Auto-Align", systemImage: "waveform.badge.magnifyingglass")
+                    Label(L10n.Toolbar.autoAlign(vm.lang), systemImage: "waveform.badge.magnifyingglass")
                 }
             }
             .disabled(!vm.project.hasVideo || !vm.project.hasLyrics || vm.isAligning
@@ -86,7 +86,7 @@ struct ToolbarView: View {
             Button {
                 exportVideo()
             } label: {
-                Label("Export", systemImage: "square.and.arrow.up.fill")
+                Label(L10n.Toolbar.export(vm.lang), systemImage: "square.and.arrow.up.fill")
             }
             .disabled(!vm.project.isReadyForExport)
 
@@ -96,7 +96,7 @@ struct ToolbarView: View {
             Button {
                 openProject()
             } label: {
-                Label("Open", systemImage: "folder")
+                Label(L10n.Toolbar.open(vm.lang), systemImage: "folder")
             }
 
             // Save
@@ -105,8 +105,17 @@ struct ToolbarView: View {
                     showSaveAsPanel()
                 }
             } label: {
-                Label("Save", systemImage: "square.and.arrow.down")
+                Label(L10n.Toolbar.save(vm.lang), systemImage: "square.and.arrow.down")
             }
+
+            Divider().frame(height: 20)
+
+            Picker("", selection: $vm.uiLanguage) {
+                ForEach(UILanguage.allCases) { lang in
+                    Text(lang.displayName).tag(lang)
+                }
+            }
+            .frame(width: 80)
         }
     }
 
@@ -143,7 +152,7 @@ struct ToolbarView: View {
 
     private var alignmentPickerHelp: String {
         if vm.alignmentQualityMode.isExperimental && !vm.advancedPipelineAvailable {
-            return "Experimental pipeline not available. Run: cd Scripts && ./setup_alignment.sh"
+            return L10n.Toolbar.experimentalNotAvailable(vm.lang)
         }
         return vm.alignmentQualityMode.description
     }

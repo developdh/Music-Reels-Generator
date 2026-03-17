@@ -39,10 +39,10 @@ struct ContentView: View {
             StatusBarView()
                 .frame(height: 28)
         }
-        .alert("Error", isPresented: $vm.showError) {
-            Button("OK") { vm.showError = false }
+        .alert(L10n.Common.error(vm.lang), isPresented: $vm.showError) {
+            Button(L10n.Common.ok(vm.lang)) { vm.showError = false }
         } message: {
-            Text(vm.errorMessage ?? "Unknown error")
+            Text(vm.errorMessage ?? L10n.Common.unknownError(vm.lang))
         }
         .sheet(isPresented: $vm.showURLImportSheet) {
             URLImportSheet()
