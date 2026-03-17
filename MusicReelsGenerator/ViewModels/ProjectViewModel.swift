@@ -7,8 +7,8 @@ import SwiftUI
 class ProjectViewModel: ObservableObject {
     // MARK: - UI Language
     @Published var uiLanguage: UILanguage = {
-        let raw = UserDefaults.standard.string(forKey: "uiLanguage") ?? "ko"
-        return UILanguage(rawValue: raw) ?? .ko
+        let raw = UserDefaults.standard.string(forKey: "uiLanguage") ?? "en"
+        return UILanguage(rawValue: raw) ?? .en
     }() {
         didSet { UserDefaults.standard.set(uiLanguage.rawValue, forKey: "uiLanguage") }
     }
