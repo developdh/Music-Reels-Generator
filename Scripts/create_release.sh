@@ -126,6 +126,9 @@ PLIST
 
 # Create ZIP archive
 echo ""
+# Sign the entire .app bundle
+codesign --force --sign - --deep "$APP_DIR"
+
 echo "--- Packaging ---"
 RELEASE_DIR="$BUILD_DIR/release-package"
 rm -rf "$RELEASE_DIR"

@@ -56,6 +56,13 @@ if [ -f "$ED_KEY_FILE" ]; then
     SUPublicEDKey=$(cat "$ED_KEY_FILE" | tr -d '[:space:]')
 fi
 
+# Build optional SUPublicEDKey plist entry
+EDDSA_PLIST_ENTRY=""
+if [ -n "$SUPublicEDKey" ]; then
+    EDDSA_PLIST_ENTRY="    <key>SUPublicEDKey</key>
+    <string>${SUPublicEDKey}</string>"
+fi
+
 # Generate Info.plist
 cat > "$APP_DIR/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -90,10 +97,9 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
     <string>public.app-category.video</string>
     <key>SUFeedURL</key>
     <string>${APPCAST_URL}</string>
-    <key>SUPublicEDKey</key>
-    <string>${SUPublicEDKey}</string>
     <key>SUEnableAutomaticChecks</key>
     <true/>
+${EDDSA_PLIST_ENTRY}
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
@@ -110,6 +116,9 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 </dict>
 </plist>
 PLIST
+
+# Sign the entire .app bundle (must be done after all files are in place)
+codesign --force --sign - --deep "$APP_DIR"
 
 echo ""
 echo "=== Build Complete ==="
