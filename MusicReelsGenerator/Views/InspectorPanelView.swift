@@ -245,35 +245,55 @@ struct BlockInspectorView: View {
 struct CropInspectorView: View {
     @EnvironmentObject var vm: ProjectViewModel
 
+    private var isHorizontal: Bool {
+        vm.project.cropSettings.mode == .horizontal
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Crop Settings")
                 .font(.headline)
 
-            GroupBox("Horizontal Position") {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("L")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Slider(value: $vm.project.cropSettings.horizontalOffset, in: -1...1)
-                            .onChange(of: vm.project.cropSettings.horizontalOffset) { _, _ in
-                                vm.isDirty = true
-                            }
-                        Text("R")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+            // Mode picker
+            GroupBox("Mode") {
+                Picker("", selection: $vm.project.cropSettings.mode) {
+                    ForEach(CropMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
                     }
-
-                    Button("Center H") {
-                        vm.project.cropSettings.horizontalOffset = 0
-                        vm.isDirty = true
-                    }
-                    .controlSize(.small)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: vm.project.cropSettings.mode) { _, _ in
+                    vm.isDirty = true
                 }
             }
 
-            GroupBox("Vertical Position") {
+            // 세로모드: horizontal offset (가로모드에서는 항상 중앙)
+            if !isHorizontal {
+                GroupBox("Horizontal Position") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("L")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Slider(value: $vm.project.cropSettings.horizontalOffset, in: -1...1)
+                                .onChange(of: vm.project.cropSettings.horizontalOffset) { _, _ in
+                                    vm.isDirty = true
+                                }
+                            Text("R")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Button("Center H") {
+                            vm.project.cropSettings.horizontalOffset = 0
+                            vm.isDirty = true
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+
+            GroupBox(isHorizontal ? "Video Position" : "Vertical Position") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("T")
@@ -318,6 +338,29 @@ struct CropInspectorView: View {
                             vm.isDirty = true
                         }
                         .controlSize(.small)
+                    }
+                }
+            }
+
+            // 가로모드: blur intensity
+            if isHorizontal {
+                GroupBox("Blur") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("약")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Slider(value: $vm.project.cropSettings.blurRadius, in: 10...50, step: 1)
+                                .onChange(of: vm.project.cropSettings.blurRadius) { _, _ in
+                                    vm.isDirty = true
+                                }
+                            Text("강")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        Text("배경 블러 강도: \(Int(vm.project.cropSettings.blurRadius))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
             }

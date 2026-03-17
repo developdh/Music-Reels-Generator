@@ -77,18 +77,54 @@ class ExportService {
         let sourceH = Double(meta.height)
         let targetW = Double(outW)
         let targetH = Double(outH)
-        let zoom = crop.zoomScale
-        let scaleFactor = max(targetW / sourceW, targetH / sourceH) * zoom
-        let scaledW = Int((sourceW * scaleFactor).rounded(.up))
-        let scaledH = Int((sourceH * scaleFactor).rounded(.up))
-        let evenScaledW = scaledW + (scaledW % 2)
-        let evenScaledH = scaledH + (scaledH % 2)
-        let overflowX = Double(evenScaledW) - targetW
-        let overflowY = Double(evenScaledH) - targetH
-        let cropX = Int(((crop.horizontalOffset + 1.0) / 2.0 * overflowX).rounded())
-        let cropY = Int(((crop.verticalOffset + 1.0) / 2.0 * overflowY).rounded())
 
-        let filterChain = "scale=\(evenScaledW):\(evenScaledH),crop=\(outW):\(outH):\(cropX):\(cropY)"
+        let filterChain: String
+
+        switch crop.mode {
+        case .vertical:
+            // 세로모드: scale-to-fill (cover) + crop with offset
+            let zoom = crop.zoomScale
+            let scaleFactor = max(targetW / sourceW, targetH / sourceH) * zoom
+            let scaledW = Int((sourceW * scaleFactor).rounded(.up))
+            let scaledH = Int((sourceH * scaleFactor).rounded(.up))
+            let evenScaledW = scaledW + (scaledW % 2)
+            let evenScaledH = scaledH + (scaledH % 2)
+            let overflowX = Double(evenScaledW) - targetW
+            let overflowY = Double(evenScaledH) - targetH
+            let cropX = Int(((crop.horizontalOffset + 1.0) / 2.0 * overflowX).rounded())
+            let cropY = Int(((crop.verticalOffset + 1.0) / 2.0 * overflowY).rounded())
+            filterChain = "scale=\(evenScaledW):\(evenScaledH),crop=\(outW):\(outH):\(cropX):\(cropY)"
+
+        case .horizontal:
+            // 가로모드: blurred background + fitted foreground overlay
+            let blurLuma = Int(crop.blurRadius)
+            let blurChroma = max(blurLuma / 4, 1)
+            let zoom = crop.zoomScale
+
+            // Foreground: scale to fit inside canvas (preserve aspect ratio), apply zoom
+            let fitScale = min(targetW / sourceW, targetH / sourceH) * zoom
+            var fgW = Int((sourceW * fitScale).rounded())
+            var fgH = Int((sourceH * fitScale).rounded())
+            // Clamp to canvas
+            fgW = min(fgW, outW)
+            fgH = min(fgH, outH)
+            // Even dimensions
+            fgW += fgW % 2
+            fgH += fgH % 2
+
+            // Foreground vertical position from verticalOffset (-1..1)
+            let maxOffsetY = Int(targetH) - fgH
+            let overlayY = Int(((crop.verticalOffset + 1.0) / 2.0) * Double(maxOffsetY))
+            let overlayX = (outW - fgW) / 2
+
+            filterChain = """
+            split=2[bg][fg];\
+            [bg]scale=\(outW):\(outH):force_original_aspect_ratio=increase,\
+            crop=\(outW):\(outH),boxblur=\(blurLuma):\(blurChroma)[bgblur];\
+            [fg]scale=\(fgW):\(fgH)[fgfit];\
+            [bgblur][fgfit]overlay=\(overlayX):\(overlayY)
+            """
+        }
 
         // Build FFmpeg args with trim via -ss (seek) and -t (duration)
         var ffmpegArgs: [String] = []

@@ -100,9 +100,13 @@ struct CroppedVideoPreview: View {
 
                 // 9:16 preview frame
                 ZStack {
-                    croppedVideo(previewSize: previewSize)
-                        .frame(width: previewSize.width, height: previewSize.height)
-                        .clipped()
+                    if cropSettings.mode == .horizontal {
+                        horizontalModeVideo(previewSize: previewSize)
+                    } else {
+                        croppedVideo(previewSize: previewSize)
+                            .frame(width: previewSize.width, height: previewSize.height)
+                            .clipped()
+                    }
 
                     let canvasSize = CGSize(
                         width: CGFloat(cropSettings.outputWidth),
@@ -130,6 +134,48 @@ struct CroppedVideoPreview: View {
                 .clipShape(Rectangle())
             }
         }
+    }
+
+    /// 가로모드: blurred background + fitted foreground
+    @ViewBuilder
+    private func horizontalModeVideo(previewSize: CGSize) -> some View {
+        let srcW = CGFloat(max(videoMetadata.width, 1))
+        let srcH = CGFloat(max(videoMetadata.height, 1))
+        let targetW = previewSize.width
+        let targetH = previewSize.height
+
+        // Background: scale to fill (cover) + blur
+        let bgScale = max(targetW / srcW, targetH / srcH)
+        let bgW = srcW * bgScale
+        let bgH = srcH * bgScale
+
+        // Foreground: scale to fit + zoom
+        let zoom = CGFloat(cropSettings.zoomScale)
+        let fgScale = min(targetW / srcW, targetH / srcH) * zoom
+        let fgW = min(srcW * fgScale, targetW)
+        let fgH = min(srcH * fgScale, targetH)
+
+        // Vertical offset for foreground
+        let maxOffsetY = targetH - fgH
+        let fgY = ((CGFloat(cropSettings.verticalOffset) + 1.0) / 2.0) * maxOffsetY - maxOffsetY / 2.0
+
+        ZStack {
+            // Blurred background layer
+            PlayerLayerView(player: player)
+                .frame(width: bgW, height: bgH)
+                .clipped()
+                .blur(radius: CGFloat(cropSettings.blurRadius))
+                .frame(width: targetW, height: targetH)
+                .clipped()
+
+            // Fitted foreground layer
+            PlayerLayerView(player: player)
+                .frame(width: fgW, height: fgH)
+                .clipped()
+                .offset(y: fgY)
+        }
+        .frame(width: targetW, height: targetH)
+        .clipped()
     }
 
     /// The video layer, scaled to fill the 9:16 preview and offset by crop sliders
