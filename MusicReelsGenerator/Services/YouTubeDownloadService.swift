@@ -22,6 +22,7 @@ enum YouTubeDownloadState: Equatable {
 
 enum YouTubeDownloadError: LocalizedError {
     case featureDisabled
+    case scriptNotFound
     case ytdlpNotFound
     case invalidURL
     case downloadFailed(String)
@@ -30,6 +31,8 @@ enum YouTubeDownloadError: LocalizedError {
         switch self {
         case .featureDisabled:
             return "이 기능은 현재 비활성화 상태입니다."
+        case .scriptNotFound:
+            return "yt_download.sh not found. Place the script in ~/Library/Application Support/MusicReelsGenerator/Scripts/"
         case .ytdlpNotFound:
             return "yt-dlp not found. Install with: brew install yt-dlp"
         case .invalidURL:

@@ -94,9 +94,14 @@ struct URLImportSheet: View {
             Text("이 기능은 현재 비활성화 상태입니다.")
                 .font(.body)
 
-            Text("This feature is not available in the public build.")
+            Text("yt_download.sh 스크립트를 아래 경로에 설치하세요:")
                 .font(.caption)
                 .foregroundColor(.secondary)
+
+            Text("~/Library/Application Support/MusicReelsGenerator/Scripts/yt_download.sh")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary)
+                .textSelection(.enabled)
 
             Button("OK") { dismiss() }
                 .keyboardShortcut(.cancelAction)
