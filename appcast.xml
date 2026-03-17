@@ -5,5 +5,16 @@
         <link>https://github.com/developdh/Music-Reels-Generator</link>
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
+        <item>
+            <title>Version 1.6.0</title>
+            <pubDate>Tue, 17 Mar 2026 10:45:54 +0900</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/developdh/Music-Reels-Generator/releases/download/v1.6.0/MusicReelsGenerator-1.6.0.zip"
+                sparkle:edSignature="QG8VCPjQ1wNw2THki63Z6n0O0WktbejI/3CgaJalaGHzkAoe1+A9GRIyjfiTSc99AS+xYsSdxiqMPfRL0D61Dw=="
+                length="2702115"
+                type="application/octet-stream"
+            />
+        </item>
     </channel>
 </rss>
