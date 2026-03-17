@@ -1,0 +1,109 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1773725011137,
+  "projectRoot": "/Users/dh/project/Music-Reels-Generator",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "MusicReelsGenerator": {
+      "path": "MusicReelsGenerator",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1773725011125,
+      "keyFiles": []
+    },
+    "MusicReelsGenerator.xcodeproj": {
+      "path": "MusicReelsGenerator.xcodeproj",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1773725011125,
+      "keyFiles": [
+        "project.pbxproj"
+      ]
+    },
+    "Scripts": {
+      "path": "Scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 7,
+      "lastAccessed": 1773725011125,
+      "keyFiles": [
+        "alignment_pipeline.py",
+        "create_release.sh",
+        "install_yt_download.sh",
+        "requirements.txt",
+        "setup_alignment.sh"
+      ]
+    },
+    "MusicReelsGenerator/App": {
+      "path": "MusicReelsGenerator/App",
+      "purpose": "Application code",
+      "fileCount": 1,
+      "lastAccessed": 1773725011125,
+      "keyFiles": [
+        "MusicReelsGeneratorApp.swift"
+      ]
+    },
+    "MusicReelsGenerator/Models": {
+      "path": "MusicReelsGenerator/Models",
+      "purpose": "Data models",
+      "fileCount": 12,
+      "lastAccessed": 1773725011125,
+      "keyFiles": [
+        "AlignmentQualityMode.swift",
+        "CropSettings.swift",
+        "IgnoreRegion.swift"
+      ]
+    },
+    "MusicReelsGenerator/Services": {
+      "path": "MusicReelsGenerator/Services",
+      "purpose": "Business logic services",
+      "fileCount": 11,
+      "lastAccessed": 1773725011126,
+      "keyFiles": [
+        "AdvancedAlignmentService.swift",
+        "AudioExtractionService.swift",
+        "ExportService.swift"
+      ]
+    },
+    "MusicReelsGenerator/Views": {
+      "path": "MusicReelsGenerator/Views",
+      "purpose": "View templates",
+      "fileCount": 8,
+      "lastAccessed": 1773725011126,
+      "keyFiles": [
+        "ContentView.swift",
+        "InspectorPanelView.swift",
+        "LyricsPanelView.swift"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}
