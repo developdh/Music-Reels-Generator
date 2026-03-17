@@ -17,7 +17,7 @@
 #   - Final file path to stdout
 #   - Exit 0 on success, non-zero on failure
 
-set -euo pipefail
+set -uo pipefail
 
 URL="${1:?Usage: yt_download.sh <URL> <OUTPUT_DIR>}"
 OUTPUT_DIR="${2:?Usage: yt_download.sh <URL> <OUTPUT_DIR>}"
@@ -41,6 +41,8 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 # Download with progress parsing
+# Note: set -e is intentionally not used here because grep returns exit 1
+# on no match, which would kill the script inside the while loop.
 "$YTDLP" \
     "$URL" \
     -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
@@ -49,13 +51,19 @@ mkdir -p "$OUTPUT_DIR"
     --newline \
     --no-playlist \
     2>&1 | while IFS= read -r line; do
-        if echo "$line" | grep -q '\[download\]'; then
-            pct=$(echo "$line" | grep -oE '[0-9]+\.?[0-9]*%' | head -1 | tr -d '%')
+        if [[ "$line" == *"[download]"* ]]; then
+            pct=$(echo "$line" | grep -oE '[0-9]+\.?[0-9]*%' | head -1 | tr -d '%' || true)
             if [ -n "$pct" ]; then
                 echo "PROGRESS:${pct}:${line}" >&2
             fi
         fi
     done
+
+PIPE_EXIT=${PIPESTATUS[0]}
+if [ "$PIPE_EXIT" -ne 0 ]; then
+    echo "yt-dlp exited with code $PIPE_EXIT" >&2
+    exit 1
+fi
 
 # Find the downloaded file
 DOWNLOADED=$(find "$OUTPUT_DIR" -type f \( -name "*.mp4" -o -name "*.mkv" -o -name "*.webm" -o -name "*.mov" \) | head -1)
