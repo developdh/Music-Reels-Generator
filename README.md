@@ -23,6 +23,7 @@
   <img src="https://img.shields.io/badge/AVFoundation-Media-8B5CF6?style=flat-square&logo=apple&logoColor=white" alt="AVFoundation">
   <img src="https://img.shields.io/badge/FFmpeg-CLI-007808?style=flat-square&logo=ffmpeg&logoColor=white" alt="FFmpeg">
   <img src="https://img.shields.io/badge/whisper.cpp-AI-4B5563?style=flat-square" alt="whisper.cpp">
+  <img src="https://img.shields.io/badge/Sparkle-Auto_Update-FF6347?style=flat-square" alt="Sparkle">
 </p>
 
 </div>
@@ -34,6 +35,8 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 ## Features
 
 - **Video Import** — Load any local video file (.mp4, .mov, .avi), extract metadata (dimensions, duration, FPS, file size), preview in-app with AVPlayerLayer
+- **URL Import** — Download videos directly from YouTube and other supported sites via an external `yt_download.sh` script (powered by yt-dlp). Progress is streamed to the UI in real-time. The script is distributed separately in Application Support for update-safe deployment
+- **Auto-Update** — Built-in Sparkle update framework checks for new releases from GitHub Releases. Available via the app menu "Check for Updates…"
 - **Multi-Language Support** — Configurable primary language for speech recognition: Japanese, Korean, English, or Auto-detect (multilingual). Language picker in the toolbar, saved per-project
 - **Flexible Lyrics Parser** — Paste lyrics in a simple block format (blank line separator). Supports monolingual (1 line per block) or bilingual (2 lines per block: primary + secondary language). Mixing mono/bilingual blocks is allowed. Secondary language is optional and purely for display
 - **Ignore Regions** — Mark time ranges to exclude from speech recognition (e.g., MC talk, audience interaction in live concert videos). Segments overlapping ignore regions are filtered out before alignment, local re-alignment, and anchor correction
@@ -61,6 +64,9 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 - **Xcode 15+** or Swift 5.9+ toolchain
 - **FFmpeg** — audio extraction, video crop/scale/trim/encode
 
+### For URL Import (optional)
+- **yt-dlp** — video download from YouTube and other sites (`brew install yt-dlp`)
+
 ### For production alignment (Recommended mode)
 - **whisper-cpp** — offline speech recognition (binary: `whisper-cli`)
 - **Whisper model file** — e.g., `ggml-medium.bin` (~1.5 GB)
@@ -85,6 +91,20 @@ cd Scripts && ./setup_alignment.sh
 `setup.sh` installs FFmpeg and whisper-cpp via Homebrew and downloads the whisper medium model.
 
 `setup_alignment.sh` installs `openai-whisper`, `pykakasi`, `numpy`, and optionally `demucs`.
+
+### URL Import Setup
+
+```bash
+# Install yt-dlp
+brew install yt-dlp
+
+# Install the download script
+mkdir -p ~/Library/Application\ Support/MusicReelsGenerator/Scripts
+cp Scripts/yt_download.sh ~/Library/Application\ Support/MusicReelsGenerator/Scripts/
+chmod +x ~/Library/Application\ Support/MusicReelsGenerator/Scripts/yt_download.sh
+```
+
+The URL Import button in the toolbar activates automatically once the script is installed at the expected path.
 
 ### Manual Setup
 
@@ -134,8 +154,8 @@ open ".build/Music Reels Generator.app"
 2. Select the primary language from the toolbar dropdown
 3. Paste lyrics (primary language only, or primary + secondary bilingual)
 4. Keep the default "Recommended" mode and click "Auto-Align"
-4. Adjust crop, trim, subtitle styling, and metadata overlay
-5. Export the final vertical video
+5. Adjust crop, trim, subtitle styling, and metadata overlay
+6. Export the final vertical video
 
 ## Usage
 
@@ -143,7 +163,13 @@ open ".build/Music Reels Generator.app"
 
 File > Import Video (Cmd+I), or click "Import Video" in the toolbar. Supports `.mp4`, `.mov`, `.avi` files. The app extracts metadata (dimensions, duration, FPS, file size) via AVFoundation and initializes the trim range to the full video duration.
 
-### 2. Paste Lyrics
+### 2. URL Import
+
+Click "URL Import" in the toolbar. Enter a YouTube or other supported video URL and click "Download & Import". The app downloads the video via the external `yt_download.sh` script (requires yt-dlp) with real-time progress display, then automatically imports it.
+
+If the URL Import button shows a disabled state, install the download script (see [URL Import Setup](#url-import-setup) above).
+
+### 3. Paste Lyrics
 
 Click the "+" button in the Lyrics panel. Paste lyrics in one of these formats:
 
@@ -169,7 +195,7 @@ Rules:
 - Mixing mono/bilingual blocks is allowed
 - Extra blank lines are ignored
 
-### 3. Auto-Align
+### 4. Auto-Align
 
 Select the primary language and alignment mode from the toolbar dropdowns, then click "Auto-Align". The language setting determines the whisper `-l` flag (Auto omits it for auto-detection). The toolbar shows status badges for FFmpeg (green/red), Whisper (green/red for whisper-cpp), and Python (Exp) (green/red for experimental pipeline availability).
 
@@ -208,7 +234,7 @@ The **Recommended** mode is selected by default and consistently produces the be
    - **Exp: Hybrid** — Ungated ASR anchors + character-level DTW (for comparison only)
 5. Proportional interpolation for remaining unmatched lines
 
-### 4. Fix Timing
+### 5. Fix Timing
 
 - Click a lyric block in the left panel to select it
 - Use playback controls to seek to the right moment
@@ -221,7 +247,7 @@ The **Recommended** mode is selected by default and consistently produces the be
 - Manually adjusted blocks show a blue "Manual" badge; confidence is set to 1.0
 - When both start and end of a block are manually adjusted, it automatically qualifies as a trusted anchor
 
-### 5. Trim Video
+### 6. Trim Video
 
 In the Inspector > Trim tab:
 - **Draggable trim handles** — Drag the green (start) or red (end) handle on the trim bar to visually adjust the trim range
@@ -231,7 +257,7 @@ In the Inspector > Trim tab:
 - "Reset Trim" restores the full video duration
 - The trimmed duration is shown in the playback controls
 
-### 6. Ignore Regions
+### 7. Ignore Regions
 
 In the Inspector > Ignore tab:
 - Click "현재 위치에 무시 구간 추가" to add an ignore region at the current playback position (default +10s)
@@ -241,7 +267,7 @@ In the Inspector > Ignore tab:
 - Delete regions with the trash button
 - Ignore regions are applied during alignment: whisper segments overlapping any ignore region are filtered out before matching
 
-### 7. Adjust Crop
+### 8. Adjust Crop
 
 In the Inspector > Crop tab:
 - Adjust the horizontal offset slider (L-R) to position the vertical crop window
@@ -250,7 +276,7 @@ In the Inspector > Crop tab:
 - Click "Center H" / "Center V" to reset offsets, "Reset Zoom" to return to 1x
 - The preview shows the 9:16 frame in real-time with cover-mode scaling
 
-### 8. Style Subtitles
+### 9. Style Subtitles
 
 In the Inspector > Style tab:
 - Choose Line 1 and Line 2 font families independently (recommended CJK fonts listed first: Hiragino Sans, Hiragino Kaku Gothic ProN, Apple SD Gothic Neo, etc.)
@@ -261,7 +287,7 @@ In the Inspector > Style tab:
 - **Style presets**: Save the current style as a named preset for reuse. Apply presets from the dropdown, or manage (rename, duplicate, delete) in the preset manager. Presets capture subtitle + overlay styling but not song-specific text
 - Preview uses the same `SubtitleRenderer` as export — what you see is what you get
 
-### 9. Title / Artist Overlay
+### 10. Title / Artist Overlay
 
 In the Inspector > Overlay tab:
 - Toggle the overlay on/off
@@ -273,7 +299,7 @@ In the Inspector > Overlay tab:
 - The overlay appears in the top-left area with a dark rounded background box
 - Preview and export render identically using the shared `SubtitleRenderer`
 
-### 10. Export
+### 11. Export
 
 Click "Export" in the toolbar. Choose a save location. The app will:
 1. Trim and crop the video to 1080x1920 via FFmpeg (`-ss` seek + `-t` duration, H.264 CRF 18, fast preset, AAC 192k)
@@ -286,7 +312,7 @@ Click "Export" in the toolbar. Choose a save location. The app will:
 8. Audio is passed through on a background queue
 9. Progress is shown in the bottom status bar
 
-### 11. Save & Load
+### 12. Save & Load
 
 - **Save**: Click "Save" in the toolbar or Cmd+S. If no file exists yet, a Save As dialog appears
 - **Open**: Click "Open" in the toolbar or Cmd+O to load a `.mreels` project file
@@ -318,7 +344,7 @@ Click "Export" in the toolbar. Choose a save location. The app will:
 ```
 MusicReelsGenerator/
 ├── App/
-│   └── MusicReelsGeneratorApp     # @main, AppDelegate (key event monitor), window config
+│   └── MusicReelsGeneratorApp     # @main, AppDelegate (key event monitor), Sparkle auto-update, window config
 ├── Models/
 │   ├── Project                    # Root aggregate: video, metadata, blocks, styles, trim, overlay, language
 │   ├── LyricBlock                 # Primary+secondary text, timing, confidence, isAnchor/isUserAnchor, manual flags
@@ -340,7 +366,9 @@ MusicReelsGenerator/
 │   ├── SubtitleRenderService      # ASS subtitle file generation with per-language styles
 │   ├── VideoService               # AVFoundation metadata extraction (handles rotated videos)
 │   ├── ProjectPersistenceService  # JSON save/load (.mreels), backward-compatible Decodable
-│   └── StylePresetStore           # Singleton preset library, JSON persistence in App Support
+│   ├── StylePresetStore           # Singleton preset library, JSON persistence in App Support
+│   ├── YouTubeDownloadService     # Protocol, state enum, stub provider, runtime registry
+│   └── YouTubeDownloadProvider_Real  # External yt_download.sh script integration with progress parsing
 ├── ViewModels/
 │   └── ProjectViewModel           # @MainActor ObservableObject: playback, alignment, anchors, export
 ├── Views/
@@ -349,7 +377,8 @@ MusicReelsGenerator/
 │   ├── VideoPreviewView           # AVPlayerLayer + crop offset + metadata overlay + subtitle overlay
 │   ├── PlaybackControlsView       # Scrubber with trim indicator, play/pause, +-1s/+-5s, set timing
 │   ├── InspectorPanelView         # 7 tabs: Block / Trim / Crop / Style / Overlay / Ignore / Info
-│   ├── ToolbarView                # Import, language picker, mode picker, Align, status badges, Export, Open, Save
+│   ├── ToolbarView                # Import, URL Import, language picker, mode picker, Align, status badges, Export, Open, Save
+│   ├── URLImportSheet             # URL download dialog with progress display
 │   └── StatusBarView              # Export progress bar, status message, dirty indicator
 ├── Utilities/
 │   ├── SubtitleRenderer           # Shared Core Graphics renderer: renderBlock + renderMetadataOverlay
@@ -364,6 +393,7 @@ MusicReelsGenerator/
 
 Scripts/
 ├── alignment_pipeline.py          # Experimental Python alignment: G2P, DTW, chunking, DP
+├── yt_download.sh                 # External YouTube download script (yt-dlp wrapper with progress protocol)
 ├── requirements.txt               # Python dependencies (openai-whisper, pykakasi, numpy)
 └── setup_alignment.sh             # One-command setup for experimental pipeline
 ```
@@ -494,8 +524,9 @@ Backward compatibility: older project files without `primaryLanguage`, `ignoreRe
 - Frame-by-frame export is CPU-intensive (processes each video frame individually)
 - Experimental pipeline requires Python 3 + ~2 GB of pip packages (torch, whisper)
 - Whisper models are downloaded on first use (~1.5 GB for medium, ~3 GB for large-v3)
+- URL Import requires external `yt_download.sh` script and yt-dlp to be installed separately
 - No cloud sync or multi-device support
-- Development build only (not packaged for App Store, no app sandbox)
+- Not packaged for App Store (no app sandbox — required for launching external processes)
 
 ## License
 
