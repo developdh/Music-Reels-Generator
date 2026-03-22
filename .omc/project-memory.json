@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1773725011137,
+  "lastScanned": 1773817464728,
   "projectRoot": "/Users/dh/project/Music-Reels-Generator",
   "techStack": {
     "languages": [],
@@ -36,14 +36,14 @@
       "path": "MusicReelsGenerator",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1773725011125,
+      "lastAccessed": 1773817464714,
       "keyFiles": []
     },
     "MusicReelsGenerator.xcodeproj": {
       "path": "MusicReelsGenerator.xcodeproj",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1773725011125,
+      "lastAccessed": 1773817464714,
       "keyFiles": [
         "project.pbxproj"
       ]
@@ -52,7 +52,7 @@
       "path": "Scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 7,
-      "lastAccessed": 1773725011125,
+      "lastAccessed": 1773817464715,
       "keyFiles": [
         "alignment_pipeline.py",
         "create_release.sh",
@@ -65,7 +65,7 @@
       "path": "MusicReelsGenerator/App",
       "purpose": "Application code",
       "fileCount": 1,
-      "lastAccessed": 1773725011125,
+      "lastAccessed": 1773817464715,
       "keyFiles": [
         "MusicReelsGeneratorApp.swift"
       ]
@@ -74,7 +74,7 @@
       "path": "MusicReelsGenerator/Models",
       "purpose": "Data models",
       "fileCount": 12,
-      "lastAccessed": 1773725011125,
+      "lastAccessed": 1773817464716,
       "keyFiles": [
         "AlignmentQualityMode.swift",
         "CropSettings.swift",
@@ -85,7 +85,7 @@
       "path": "MusicReelsGenerator/Services",
       "purpose": "Business logic services",
       "fileCount": 11,
-      "lastAccessed": 1773725011126,
+      "lastAccessed": 1773817464716,
       "keyFiles": [
         "AdvancedAlignmentService.swift",
         "AudioExtractionService.swift",
@@ -96,7 +96,7 @@
       "path": "MusicReelsGenerator/Views",
       "purpose": "View templates",
       "fileCount": 8,
-      "lastAccessed": 1773725011126,
+      "lastAccessed": 1773817464716,
       "keyFiles": [
         "ContentView.swift",
         "InspectorPanelView.swift",
