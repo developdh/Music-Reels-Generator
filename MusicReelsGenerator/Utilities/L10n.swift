@@ -846,6 +846,7 @@ enum L10n {
             case (.japanese, _): return "日本語"
             case (.korean, _): return "한국어"
             case (.english, _): return "English"
+            case (.chinese, _): return "中文"
             case (.auto, .ko): return "다중언어 (Auto)"
             case (.auto, .en): return "Multi-language (Auto)"
             case (.auto, .ja): return "多言語 (Auto)"

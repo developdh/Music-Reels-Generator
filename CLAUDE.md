@@ -39,7 +39,7 @@ Homebrew FFmpeg lacks libass, so export is split:
 ### Dual Alignment Pipeline
 
 Two completely separate alignment paths selected at runtime in `runAutoAlignment()`:
-- **Production** (`WhisperAlignmentService`): whisper-cpp CLI → CSV parsing → position-aware beam-search DP (Swift). Language flag from `PrimaryLanguage` (ja/ko/en/auto). Ignore regions filter out segments before alignment. Cached segments enable fast local re-alignment.
+- **Production** (`WhisperAlignmentService`): whisper-cpp CLI → CSV parsing → position-aware beam-search DP (Swift). Language flag from `PrimaryLanguage` (ja/ko/en/zh/auto). Ignore regions filter out segments before alignment. Cached segments enable fast local re-alignment.
 - **Experimental** (`AdvancedAlignmentService`): Python subprocess → `Scripts/alignment_pipeline.py` → JSON I/O. Three sub-modes (Segment/Refined/Hybrid).
 
 ### Dual Anchor System
@@ -52,7 +52,7 @@ After alignment, `isUserAnchor` flags are restored because the alignment service
 
 ### Language & Lyrics Model
 
-`PrimaryLanguage` enum (ja/ko/en/auto) stored in `Project.primaryLanguage`. Determines the whisper `-l` flag; `auto` omits it for auto-detection.
+`PrimaryLanguage` enum (ja/ko/en/zh/auto) stored in `Project.primaryLanguage`. Determines the whisper `-l` flag; `auto` omits it for auto-detection.
 
 `LyricBlock` has `japanese` and `korean` fields (legacy names kept for Codable backward compat). These are semantically "primary text" and "secondary text". Secondary text can be empty — the parser accepts 1-line blocks (primary only) or 2-line blocks (primary + secondary). `SubtitleRenderer` skips Line 2 rendering when `korean` is empty.
 
