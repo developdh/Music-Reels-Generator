@@ -15,7 +15,7 @@
   </a>
 </p>
 
-<p><strong>A macOS desktop app for generating vertical music lyric videos (Reels / Shorts) from an existing music video file and lyrics. Supports multiple primary languages (Japanese, Korean, English, Auto) with optional bilingual subtitles.</strong></p>
+<p><strong>A macOS desktop app for generating vertical music lyric videos (Reels / Shorts) from an existing music video file and lyrics. Supports multiple primary languages (Japanese, Korean, English, Chinese, Auto) with optional bilingual subtitles.</strong></p>
 
 <p>
   <img src="https://img.shields.io/badge/Swift-5.9+-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift">
@@ -37,7 +37,7 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 - **Video Import** — Load any local video file (.mp4, .mov, .avi), extract metadata (dimensions, duration, FPS, file size), preview in-app with AVPlayerLayer
 - **URL Import** — Download videos directly from YouTube and other supported sites via an external `yt_download.sh` script (powered by yt-dlp). Progress is streamed to the UI in real-time. The script is distributed separately in Application Support for update-safe deployment
 - **Auto-Update** — Built-in Sparkle update framework checks for new releases from GitHub Releases. Available via the app menu "Check for Updates…"
-- **Multi-Language Support** — Configurable primary language for speech recognition: Japanese, Korean, English, or Auto-detect (multilingual). Language picker in the toolbar, saved per-project
+- **Multi-Language Support** — Configurable primary language for speech recognition: Japanese, Korean, English, Chinese, or Auto-detect (multilingual). Language picker in the toolbar, saved per-project
 - **Flexible Lyrics Parser** — Paste lyrics in a simple block format (blank line separator). Supports monolingual (1 line per block) or bilingual (2 lines per block: primary + secondary language). Mixing mono/bilingual blocks is allowed. Secondary language is optional and purely for display
 - **Ignore Regions** — Mark time ranges to exclude from speech recognition (e.g., MC talk, audience interaction in live concert videos). Segments overlapping ignore regions are filtered out before alignment, local re-alignment, and anchor correction
 - **Production Alignment Engine** — whisper-cpp segment matching with position-aware beam-search DP, drift detection, boundary snap, and multi-pass refinement. Selected as production default for consistently best results on singing audio
@@ -404,7 +404,7 @@ Scripts/
 
 The production alignment engine uses whisper-cpp for segment-level alignment with drift detection and boundary snap:
 
-1. **Transcription** — whisper-cpp transcribes audio into sentence-level segments (~20–30 per song) with start/end timestamps via `--output-csv`. Language is determined by the project's primary language setting (`-l ja`, `-l ko`, `-l en`, or omitted for auto-detect). Segments overlapping ignore regions are filtered out before alignment
+1. **Transcription** — whisper-cpp transcribes audio into sentence-level segments (~20–30 per song) with start/end timestamps via `--output-csv`. Language is determined by the project's primary language setting (`-l ja`, `-l ko`, `-l en`, `-l zh`, or omitted for auto-detect). Segments overlapping ignore regions are filtered out before alignment
 
 2. **Non-Speech Filtering** — Segments containing non-speech markers (`(拍手)`, `(音楽)`, `[Music]`, `[Applause]`, etc.) are identified and excluded from matching candidates. Fragment merging never combines speech with non-speech segments. This prevents instrumental/applause markers from polluting lyric timing
 
@@ -503,7 +503,7 @@ This eliminates all mismatch between preview and export: same fonts, same outlin
 
 Projects are saved as `.mreels` files (JSON with ISO 8601 dates, pretty-printed, sorted keys). They store:
 - Project title, UUID, created/updated timestamps
-- Primary language setting (ja/ko/en/auto)
+- Primary language setting (ja/ko/en/zh/auto)
 - Source video path and cached metadata (width, height, duration, FPS, file size)
 - Trim settings (start/end times)
 - Crop settings (mode, horizontal/vertical offset, zoom level, output resolution)

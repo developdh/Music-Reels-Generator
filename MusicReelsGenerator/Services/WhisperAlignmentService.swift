@@ -172,6 +172,7 @@ enum WhisperAlignmentService {
         }
         // Common non-speech markers
         let nonSpeechPatterns = ["拍手", "音楽", "歓声", "ため息", "笑い", "笑",
+                                  "掌声", "音乐", "笑声", "叹息",
                                   "music", "applause", "laughter", "silence"]
         let lower = text.lowercased()
         for pattern in nonSpeechPatterns {
