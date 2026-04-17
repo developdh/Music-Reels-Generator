@@ -1,0 +1,349 @@
+================================================================================
+MUSIC REELS GENERATOR - EXPLORATION COMPLETE
+================================================================================
+
+PROJECT LOCATION: /Users/dh/project/Music-Reels-Generator
+
+GENERATED REFERENCE DOCUMENTS (saved to project root):
+1. ARCHITECTURE_OVERVIEW.md     - Tech stack, structure, patterns, key workflows
+2. FILE_MANIFEST.md             - Complete file listing with purposes and line counts
+3. REFERENCE_GUIDE.md           - Comprehensive guide with algorithms, patterns, integration points
+
+================================================================================
+QUICK FACTS
+================================================================================
+
+TECH STACK:
+  • Language: Swift 5.9+
+  • UI Framework: SwiftUI + AppKit hybrid
+  • Media: AVFoundation (playback), FFmpeg (processing)
+  • AI: whisper.cpp (offline speech recognition)
+  • Updates: Sparkle v2.6.0+
+  • Build: Swift Package Manager (SPM)
+  • Platform: macOS 14.0+ (Sonoma+) only
+
+TOTAL SOURCE FILES: 41 Swift files
+TOTAL LINES OF CODE: ~12,500 lines
+
+KEY FILES BY SIZE:
+  1. WhisperAlignmentService.swift  - 1,462 lines (alignment engine)
+  2. InspectorPanelView.swift       - 1,396 lines (editing UI)
+  3. ProjectViewModel.swift         - 1,033 lines (state management)
+  4. L10n.swift                     -   873 lines (UI strings)
+  5. ExportService.swift            -   420 lines (video export)
+
+================================================================================
+ARCHITECTURE SNAPSHOT
+================================================================================
+
+LAYERED STRUCTURE:
+  ┌─ Views (SwiftUI)
+  │  └─ ProjectViewModel (@MainActor, single source of truth)
+  │     └─ Services (business logic, async operations)
+  │        └─ Models (Codable data structures)
+  │           └─ Utilities (helpers)
+  │              └─ External Tools (FFmpeg, whisper, Python, yt-dlp)
+
+CRITICAL PATHS:
+  Alignment: LyricBlock → ViewModel → AudioExtraction → WhisperAlignment → Project
+  Export:    Project → ExportService Stage 1 (FFmpeg) → Stage 2 (burn-in) → MP4
+  Import:    User selects → ViewModel → AVAsset metadata extraction
+  UI:        Project → ViewModel @Published → Views re-render
+
+================================================================================
+DATA MODEL
+================================================================================
+
+ROOT: Project (Codable)
+  ├─ videoMetadata (resolution, duration, FPS)
+  ├─ cropSettings (vertical/horizontal, zoom, offset)
+  ├─ trimSettings (in/out timings)
+  ├─ subtitleStyle (fonts, colors, outlines, shadows)
+  ├─ metadataOverlay (title/artist box styling)
+  ├─ primaryLanguage (Japanese, Korean, English, Chinese, Auto)
+  ├─ ignoreRegions (time ranges to skip during alignment)
+  └─ lyricBlocks (array of lyrics with timing + confidence)
+       ├─ japanese: String (primary text)
+       ├─ korean: String (secondary, optional)
+       ├─ startTime/endTime: Double?
+       ├─ confidence: Double? (0-1)
+       ├─ isAnchor: Bool (auto-set by alignment)
+       ├─ isUserAnchor: Bool (user-set, locked)
+       └─ manuallyAdjustedStart/End: Bool (track manual edits)
+
+KEY INSIGHT: LyricBlock has rich state tracking for alignment quality
+  - Confidence scoring enables user to spot problematic alignments
+  - Anchor system (auto + user) enables piecewise correction
+  - Manual adjustment flags track user overrides
+
+================================================================================
+CORE FEATURES & ALGORITHMS
+================================================================================
+
+1. ALIGNMENT (WhisperAlignmentService.swift - 1462 lines)
+   ✓ Offline speech recognition via whisper.cpp
+   ✓ Segment matching using Levenshtein ratio + position-aware DP
+   ✓ Drift detection (runs of systematic error) → re-anchors locally
+   ✓ Boundary snapping (snap to nearest segment edges)
+   ✓ Confidence scoring (0-1 based on text match quality)
+   ✓ Piecewise correction (between trusted anchor pairs)
+   ✓ Auto-anchors (gray lock) vs User anchors (blue lock)
+
+2. EXPORT (ExportService.swift - 420 lines)
+   Stage 1: FFmpeg preprocessing
+     - Crop/scale/trim to 1080x1920 canvas
+     - H.264 CRF 18, AAC 192k
+   Stage 2: Frame-by-frame burn-in
+     - SubtitleRenderer: Core Graphics text (outline + shadow)
+     - MetadataOverlay: Title/artist box
+     - AVAssetWriter: Write frames back to MP4
+
+3. STYLING
+   ✓ Independent font/size/color for Japanese line
+   ✓ Independent font/size/color for Korean line
+   ✓ Outline width, shadow, line spacing, bottom margin
+   ✓ Metadata overlay (position, opacity, corner radius)
+   ✓ Style presets (save/load reusable templates)
+
+4. VIDEO FRAMING
+   ✓ Vertical mode (9:16): crop with zoom + horizontal/vertical offset
+   ✓ Horizontal mode (any ratio): scale with blurred background padding
+   ✓ Configurable zoom (1x-3x)
+   ✓ Non-destructive trim (in/out markers)
+
+5. LANGUAGES
+   ✓ Primary: Japanese, Korean, English, Chinese, Auto-detect
+   ✓ Secondary: Optional (purely for display)
+   ✓ Bilingual blocks supported (mono/bilingual mixing allowed)
+   ✓ UI in: English, Japanese, Korean
+
+6. INTEGRATION
+   ✓ URL Import: YouTube download via yt-dlp
+   ✓ Auto-Update: Sparkle framework, checks GitHub Releases
+   ✓ Project Persistence: JSON .mreels files
+   ✓ Backward Compatibility: Custom Decodable init for old files
+
+================================================================================
+REUSABLE PATTERNS FOR COMMUNITY APP
+================================================================================
+
+ARCHITECTURE:
+  ✓ Service-based design (stateless, encapsulated)
+  ✓ Single source of truth (ViewModel)
+  ✓ Codable with backward compatibility
+  ✓ Async/await with @MainActor
+  ✓ Subprocess orchestration (ProcessRunner)
+
+DATA PATTERNS:
+  ✓ Confidence scoring (0-1 for uncertain data)
+  ✓ Anchor/bookmark system (trusted reference points)
+  ✓ Piecewise correction (interpolate between anchors)
+  ✓ Manual adjustment tracking (audit trail)
+
+UI PATTERNS:
+  ✓ HSplitView (multi-panel editor)
+  ✓ Style presets (reusable templates)
+  ✓ Progress indication (alignment/export status)
+  ✓ Metadata overlay (attribution, credits)
+
+INTEGRATION POINTS:
+  ✓ WhisperAlignmentService → adapt for community refinement
+  ✓ ExportService → add watermarks, community credits
+  ✓ ProjectViewModel → add submission, voting, collaboration
+  ✓ LyricBlock → add contributor, reviews, community votes
+  ✓ L10n → extend for community-specific terms
+
+================================================================================
+FILES TO START WITH (Reading Order)
+================================================================================
+
+UNDERSTANDING THE APP:
+  1. MusicReelsGeneratorApp.swift (165) - Entry point, menu system
+  2. ProjectViewModel.swift (1033) - Orchestration hub
+  3. ContentView.swift (52) - Main layout
+
+UNDERSTANDING THE DATA:
+  4. Project.swift (83) - Main container
+  5. LyricBlock.swift (114) - Core timing/confidence model
+  6. SubtitleStyle.swift (77) - Styling model
+
+UNDERSTANDING KEY FEATURES:
+  7. WhisperAlignmentService.swift (1462) - Alignment engine
+  8. ExportService.swift (420) - Export pipeline
+  9. ProcessRunner.swift (287) - Subprocess orchestration
+
+UNDERSTANDING UI:
+  10. InspectorPanelView.swift (1396) - All editing tools
+  11. VideoPreviewView.swift (258) - Video display + seek
+
+================================================================================
+DESIGN DECISIONS TO NOTE
+================================================================================
+
+1. NO EXTERNAL DEPENDENCIES FOR CORE FEATURES
+   - SwiftUI, AVFoundation, Sparkle only
+   - All processing via external tools (FFmpeg, whisper-cpp, Python)
+   - Makes distribution simple, avoids dependency hell
+
+2. FRAME-BY-FRAME BURN-IN (NOT FFMPEG)
+   - Stage 1: FFmpeg crops/scales/trims
+   - Stage 2: Custom AVAssetReader/Writer for subtitle overlay
+   - Ensures precise timing, pixel-perfect rendering
+   - Slower than pure FFmpeg but more flexible
+
+3. DUAL ALIGNMENT MODES
+   - Production: whisper-cpp segment matching (built-in, recommended)
+   - Experimental: Python pipelines (optional, A/B testing)
+   - Isolated from production output
+
+4. MACOS ONLY
+   - Uses AppKit features (NSApplicationDelegate, NSOpenPanel, NSTextView)
+   - AVPlayerLayer for native video playback
+   - Not portable to iOS without major refactoring
+
+5. BACKWARD COMPATIBILITY FIRST
+   - All Codable models have custom init(from:) decoders
+   - Missing fields get sensible defaults
+   - Old project files load without errors
+
+6. USER CONTROL OVER AUTOMATION
+   - Alignment produces best-guess timings
+   - All timings can be manually overridden
+   - Manual edits preserve anchor system
+   - Preview shows exact output (WYSIWYG)
+
+================================================================================
+NEXT STEPS FOR COMMUNITY REELS GENERATOR
+================================================================================
+
+1. FORK ARCHITECTURE
+   Keep: Service pattern, ViewModel hub, Codable models, ProcessRunner
+   Extend: Add NetworkService, APIClient, CollaborationService
+
+2. EXTEND DATA MODELS
+   LyricBlock: +contributor, +reviewedBy[], +communityVotes
+   Project: +communityMetadata, +submissions[], +versions[]
+
+3. ADD NETWORKING
+   Create: NetworkService for API calls, SyncService for cloud persistence
+   Extend: ProjectViewModel with save/load to backend
+
+4. ADD COLLABORATION
+   Create: CollaborationService for real-time editing, voting, refinement
+   Extend: LyricBlock with version history, reviewer comments
+
+5. ENHANCE ALIGNMENT
+   Reuse: WhisperAlignmentService for initial transcription
+   Extend: Add community refinement, consensus building, version merging
+
+6. ADD COMMUNITY FEATURES
+   Create: SubmissionService, ReviewService, VotingService
+   Extend: InspectorPanelView with submission/voting UI
+
+7. EXPORT WITH ATTRIBUTION
+   Keep: Two-stage export pipeline
+   Extend: Add watermark, community credits, attribution overlay
+
+================================================================================
+CRITICAL FILES BY PURPOSE
+================================================================================
+
+MUST UNDERSTAND FOR ANY CHANGES:
+  • ProjectViewModel.swift - ALL state flows through here
+  • Project.swift - Root data model, backward compatibility critical
+  • LyricBlock.swift - Timing model, anchor system
+  • ProcessRunner.swift - All external tool integration
+  • ExportService.swift - Video generation pipeline
+
+SAFE TO MODIFY/EXTEND:
+  • L10n.swift - Add more UI strings
+  • StylePreset.swift - Add style properties
+  • Models/* - Add fields (with backward compat)
+  • Services/* - Add new services
+
+HIGH-RISK CHANGES:
+  • WhisperAlignmentService.swift - Complex DP algorithm
+  • ExportService.swift - Timing-critical FFmpeg operations
+  • VideoPreviewView.swift - AVPlayer integration
+
+================================================================================
+ABSOLUTE FILE PATHS (Reference)
+================================================================================
+
+/Users/dh/project/Music-Reels-Generator/
+├── Package.swift
+├── MusicReelsGenerator/
+│   ├── App/MusicReelsGeneratorApp.swift
+│   ├── Models/
+│   │   ├── Project.swift
+│   │   ├── LyricBlock.swift
+│   │   ├── SubtitleStyle.swift
+│   │   ├── CropSettings.swift
+│   │   ├── TrimSettings.swift
+│   │   ├── VideoMetadata.swift
+│   │   ├── MetadataOverlaySettings.swift
+│   │   ├── IgnoreRegion.swift
+│   │   ├── StylePreset.swift
+│   │   ├── AlignmentQualityMode.swift
+│   │   ├── PrimaryLanguage.swift
+│   │   └── UILanguage.swift
+│   ├── ViewModels/
+│   │   └── ProjectViewModel.swift
+│   ├── Views/
+│   │   ├── ContentView.swift
+│   │   ├── ToolbarView.swift
+│   │   ├── LyricsPanelView.swift
+│   │   ├── VideoPreviewView.swift
+│   │   ├── PlaybackControlsView.swift
+│   │   ├── InspectorPanelView.swift
+│   │   ├── StatusBarView.swift
+│   │   └── URLImportSheet.swift
+│   ├── Services/
+│   │   ├── WhisperAlignmentService.swift
+│   │   ├── ExportService.swift
+│   │   ├── AdvancedAlignmentService.swift
+│   │   ├── AudioExtractionService.swift
+│   │   ├── ProjectPersistenceService.swift
+│   │   ├── StylePresetStore.swift
+│   │   ├── YouTubeDownloadService.swift
+│   │   ├── YouTubeDownloadProvider_Real.swift
+│   │   ├── VideoService.swift
+│   │   ├── SubtitleRenderService.swift
+│   │   └── LyricsParserService.swift
+│   └── Utilities/
+│       ├── L10n.swift
+│       ├── ProcessRunner.swift
+│       ├── SubtitleRenderer.swift
+│       ├── JapaneseTextNormalizer.swift
+│       ├── TimeFormatter.swift
+│       ├── FontUtility.swift
+│       ├── ColorExtension.swift
+│       ├── NativeTextEditor.swift
+│       └── TrimTimingUtility.swift
+├── Scripts/
+│   ├── alignment_pipeline.py
+│   ├── yt_download.sh
+│   └── setup_alignment.sh
+├── build.sh
+├── setup.sh
+└── README.md
+
+GENERATED DOCUMENTATION:
+├── ARCHITECTURE_OVERVIEW.md
+├── FILE_MANIFEST.md
+└── REFERENCE_GUIDE.md
+
+================================================================================
+EXPLORATION COMPLETE
+================================================================================
+
+All source files have been analyzed and documented.
+Reference guides are ready for the Community Reels Generator project.
+
+Key takeaway: This is a well-architected, production-quality Swift desktop app
+with sophisticated alignment algorithms, clean separation of concerns, and
+excellent patterns for extension and customization.
+
+Ready to begin Community Reels Generator development!
+
+================================================================================
