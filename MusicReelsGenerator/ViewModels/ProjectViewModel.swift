@@ -255,14 +255,60 @@ class ProjectViewModel: ObservableObject {
 
     func parseLyrics() {
         do {
-            let blocks = try LyricsParserService.parse(lyricsInputText)
-            project.lyricBlocks = blocks
+            let newBlocks = try LyricsParserService.parse(lyricsInputText)
+            let oldBlocks = project.lyricBlocks
+
+            // Preserve timing/anchor state for blocks whose text is unchanged.
+            // Match by (primary, secondary) text, consuming each old block once
+            // so duplicate lines pair left-to-right.
+            var usedOldIndices = Set<Int>()
+            let merged: [LyricBlock] = newBlocks.map { new in
+                guard let matchIdx = oldBlocks.indices.first(where: {
+                    !usedOldIndices.contains($0)
+                        && oldBlocks[$0].japanese == new.japanese
+                        && oldBlocks[$0].korean == new.korean
+                }) else { return new }
+                usedOldIndices.insert(matchIdx)
+                let old = oldBlocks[matchIdx]
+                var merged = new
+                merged.startTime = old.startTime
+                merged.endTime = old.endTime
+                merged.confidence = old.confidence
+                merged.manuallyAdjustedStart = old.manuallyAdjustedStart
+                merged.manuallyAdjustedEnd = old.manuallyAdjustedEnd
+                merged.isAnchor = old.isAnchor
+                merged.isUserAnchor = old.isUserAnchor
+                return merged
+            }
+
+            project.lyricBlocks = merged
             project.touch()
             isDirty = true
-            statusMessage = "Parsed \(blocks.count) lyric blocks."
+            let preserved = merged.filter { $0.hasTimingData }.count
+            statusMessage = "Parsed \(merged.count) lyric blocks (\(preserved) with preserved timing)."
         } catch {
             showError(error.localizedDescription)
         }
+    }
+
+    /// Rebuild `lyricsInputText` from current blocks so the bulk editor opens pre-filled.
+    func syncLyricsInputTextFromBlocks() {
+        lyricsInputText = project.lyricBlocks.map { block in
+            block.korean.isEmpty ? block.japanese : "\(block.japanese)\n\(block.korean)"
+        }.joined(separator: "\n\n")
+    }
+
+    /// Update a single block's text without touching timing or confidence.
+    func updateBlockText(id: UUID, primary: String? = nil, secondary: String? = nil) {
+        guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+        if let p = primary {
+            project.lyricBlocks[idx].japanese = p
+        }
+        if let s = secondary {
+            project.lyricBlocks[idx].korean = s
+        }
+        project.touch()
+        isDirty = true
     }
 
     func updateBlock(id: UUID, startTime: Double? = nil, endTime: Double? = nil) {
