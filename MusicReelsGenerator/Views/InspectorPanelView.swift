@@ -75,15 +75,21 @@ struct BlockInspectorView: View {
                     .font(.headline)
 
                 GroupBox(L10n.Block.primaryLine(vm.lang)) {
-                    Text(block.japanese)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                    TextField("", text: Binding(
+                        get: { block.japanese },
+                        set: { vm.updateBlockText(id: block.id, primary: $0) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 GroupBox(L10n.Block.secondaryLine(vm.lang)) {
-                    Text(block.korean)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                    TextField("", text: Binding(
+                        get: { block.korean },
+                        set: { vm.updateBlockText(id: block.id, secondary: $0) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 GroupBox(L10n.Block.timing(vm.lang)) {

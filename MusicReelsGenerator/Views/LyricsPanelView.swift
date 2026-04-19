@@ -15,6 +15,9 @@ struct LyricsPanelView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Button {
+                    if !vm.project.lyricBlocks.isEmpty {
+                        vm.syncLyricsInputTextFromBlocks()
+                    }
                     showLyricsInput = true
                 } label: {
                     Image(systemName: "plus.circle")
