@@ -15,7 +15,7 @@
   </a>
 </p>
 
-<p><strong>A macOS desktop app for generating vertical music lyric videos (Reels / Shorts) from an existing music video file and lyrics. Supports multiple primary languages (Japanese, Korean, English, Chinese, Auto) with optional bilingual subtitles.</strong></p>
+<p><strong>A macOS desktop app for generating vertical music lyric videos (Reels / Shorts) from an existing music video file and lyrics. Supports multiple primary languages (Japanese, Korean, English, Chinese, Auto) with optional bilingual subtitles. Output in vertical (9:16 cover crop) or horizontal (fit + blurred background) mode. UI available in Korean, English, and Japanese.</strong></p>
 
 <p>
   <img src="https://img.shields.io/badge/Swift-5.9+-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift">
@@ -49,8 +49,12 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 - **Piecewise Anchor Correction** — Distributes timing proportionally between trusted anchor pairs (user-set or both start/end manually adjusted) by primary text character count. Runs automatically after alignment if user anchors exist. Also available as manual "전체 구간 재보정" and "이전앵커~다음앵커 재보정" operations
 - **Local Re-Alignment** — Re-runs whisper-cpp alignment on a bounded region between surrounding anchors using cached transcription segments, without re-transcribing the full audio
 - **Manual Timing Correction** — Set start/end times from playback position, shift all following blocks by a delta, fine-grained nudge (+-0.1s / +-0.5s), keyboard shortcuts (Cmd+[ / Cmd+]). Granular tracking of which boundary (start/end) was manually adjusted
+- **Post-Alignment Lyric Editing** — Inline edit primary/secondary text per block in the inspector without losing timing. Bulk re-paste preserves timing for blocks whose text is unchanged; the paste sheet pre-fills with current lyrics when reopened
 - **Video Trimming** — Non-destructive trim in/out to cut intros, outros, or shorten the final reel. Draggable start/end handles on the trim bar for quick visual adjustment, plus precise numeric controls. Trim range is enforced in preview playback (auto-stop at trim end, loop to trim start on play) and applied during export via FFmpeg seek
-- **Vertical Reframing** — Crop any aspect ratio video to 9:16 with adjustable horizontal and vertical offset sliders plus 1x–3x zoom slider. Cover-mode scaling ensures no black bars
+- **Vertical / Horizontal Reels Modes** — Two output layouts on the same 1080x1920 canvas:
+  - **세로모드 (Vertical)** — Cover-mode crop to 9:16 with horizontal/vertical offset sliders and 1x–3x zoom. No black bars
+  - **가로모드 (Horizontal)** — Fits the source video inside the canvas and fills empty space with a blurred, zoomed copy of the same video as background. Adjustable blur radius (10–50)
+- **Multi-Language UI** — Switch the entire interface between Korean (한국어), English, and Japanese (日本語) from the toolbar picker. Preference persists in UserDefaults, ~200 strings localized via `L10n` namespace
 - **Subtitle Styling** — Independent Line 1/Line 2 font family selection (with recommended CJK fonts: Hiragino Sans, Apple SD Gothic Neo, etc.), font size (Line 1: 24–120, Line 2: 20–100), per-line text color with color pickers and 5 preset swatches, outline width (0–8 px), shadow toggle, bottom margin (50–960, up to screen center), line spacing. When only primary language is present, Line 2 is hidden
 - **Metadata Overlay** — Optional top-left title/artist overlay with dark rounded background box. Independent font, size, and color controls for title and artist. Configurable background opacity, corner radius, padding, and position margins
 - **Style Presets** — Save, load, rename, duplicate, and delete reusable style presets (subtitle + overlay styling). Presets persist in Application Support and are reusable across all projects. Presets capture visual styling only, excluding song-specific text content (title/artist text)
@@ -195,9 +199,11 @@ Rules:
 - Mixing mono/bilingual blocks is allowed
 - Extra blank lines are ignored
 
+When reopening the paste sheet after alignment, it pre-fills with the current lyrics. Editing and re-submitting preserves timing for any block whose text is unchanged — only added/removed/modified lines need to be re-aligned.
+
 ### 4. Auto-Align
 
-Select the primary language and alignment mode from the toolbar dropdowns, then click "Auto-Align". The language setting determines the whisper `-l` flag (Auto omits it for auto-detection). The toolbar shows status badges for FFmpeg (green/red), Whisper (green/red for whisper-cpp), and Python (Exp) (green/red for experimental pipeline availability).
+Select the primary language and alignment mode from the toolbar dropdowns, then click "Auto-Align". The language setting determines the whisper `-l` flag (Auto omits it for auto-detection). The toolbar also has a UI language picker (한국어 / English / 日本語) that re-localizes the entire interface live. The toolbar shows status badges for FFmpeg (green/red), Whisper (green/red for whisper-cpp), and Python (Exp) (green/red for experimental pipeline availability).
 
 **Alignment Modes:**
 
@@ -244,6 +250,7 @@ The **Recommended** mode is selected by default and consistently produces the be
 - **Anchor operations**: Mark a block as a user anchor (blue lock) so it becomes a reference point for piecewise correction. Auto-anchors (grey lock) from alignment can be promoted to user anchors
 - **Piecewise correction**: Use "전체 앵커 구간 재보정" to redistribute timing between all user anchors, or "이전앵커~다음앵커 재보정" for the region surrounding the selected block
 - **Local re-alignment**: Re-run whisper alignment on just the region between surrounding anchors using cached segments
+- **Edit lyric text**: In Inspector > Block, edit the primary/secondary text fields inline. Timing is preserved, so you can fix typos or tweak phrasing after alignment without re-running Auto-Align
 - Manually adjusted blocks show a blue "Manual" badge; confidence is set to 1.0
 - When both start and end of a block are manually adjusted, it automatically qualifies as a trusted anchor
 
@@ -270,11 +277,10 @@ In the Inspector > Ignore tab:
 ### 8. Adjust Crop
 
 In the Inspector > Crop tab:
-- Adjust the horizontal offset slider (L-R) to position the vertical crop window
-- Adjust the vertical offset slider (T-B) for vertical positioning
-- Adjust the zoom slider (1x–3x) to zoom into the source video before cropping
-- Click "Center H" / "Center V" to reset offsets, "Reset Zoom" to return to 1x
-- The preview shows the 9:16 frame in real-time with cover-mode scaling
+- Pick a mode: **세로모드 (Vertical)** for 9:16 cover-crop, or **가로모드 (Horizontal)** to fit the source inside the canvas with a blurred background
+- Vertical mode: adjust horizontal/vertical offset sliders and the zoom slider (1x–3x) to position the crop window. Click "Center H" / "Center V" / "Reset Zoom" to reset
+- Horizontal mode: adjust the blur radius slider (10–50) to control background intensity
+- The preview updates in real-time and matches the exported output
 
 ### 9. Style Subtitles
 
@@ -351,7 +357,8 @@ MusicReelsGenerator/
 │   ├── PrimaryLanguage            # Language enum (ja/ko/en/auto) for whisper transcription
 │   ├── IgnoreRegion               # Time range excluded from alignment (start, end, label)
 │   ├── VideoMetadata              # Dimensions, duration, FPS, file size, aspect ratio detection
-│   ├── CropSettings               # 9:16 crop mode, H/V offsets (-1..1), zoom (1x-3x), output resolution (1080x1920)
+│   ├── UILanguage                 # UI locale enum (ko/en/ja), persisted in UserDefaults
+│   ├── CropSettings               # Mode (세로/가로), H/V offsets (-1..1), zoom (1x-3x), blur radius, output resolution (1080x1920)
 │   ├── TrimSettings               # Trim in/out times, clamping, validation, duration
 │   ├── SubtitleStyle              # Per-language fonts/sizes/colors (hex), outline, shadow, margins
 │   ├── MetadataOverlaySettings    # Title/artist text, fonts, colors, background box, position/padding
@@ -388,6 +395,7 @@ MusicReelsGenerator/
 │   ├── TrimTimingUtility          # Source-absolute -> trim-relative time conversion + block filtering
 │   ├── TimeFormatter              # M:SS.CS, M:SS, H:MM:SS.CS (ASS) formats
 │   ├── FontUtility                # System font enumeration, JP/KR recommended font lists
+│   ├── L10n                       # UI localization: ~200 strings in ko/en/ja across nested namespaces
 │   └── ColorExtension             # Hex (#RRGGBB) <-> SwiftUI Color conversion
 └── Resources/                     # Info.plist, entitlements
 
@@ -468,11 +476,11 @@ The export pipeline uses a two-stage approach because Homebrew's FFmpeg lacks li
 
 **Stage 1: FFmpeg Trim + Crop + Scale**
 - Seeks to trim start (`-ss`) and limits duration (`-t`)
-- Computes cover-mode scale factor: `max(targetW/srcW, targetH/srcH)`
-- Scales and crops to 1080x1920 with user-defined H/V offset
+- **Vertical mode**: cover-mode scale (`max(targetW/srcW, targetH/srcH)`) → crop to 1080x1920 with user-defined H/V offset
+- **Horizontal mode**: split → blur/zoom one branch as background → fit-scale the other branch → overlay foreground on blurred background (FFmpeg filter_complex with `split`, `boxblur`, `scale`, `overlay`)
 - Encodes H.264 (CRF 18, fast preset) with AAC audio (192k)
 - Dimensions rounded up to even numbers (H.264 requirement)
-- Output: intermediate cropped MP4
+- Output: intermediate 1080x1920 MP4
 
 **Stage 2: AVFoundation Frame-by-Frame Burn-In**
 - Pre-renders all subtitle blocks as CGImages keyed by block UUID via `SubtitleRenderer.prerenderAll()`
@@ -506,7 +514,7 @@ Projects are saved as `.mreels` files (JSON with ISO 8601 dates, pretty-printed,
 - Primary language setting (ja/ko/en/zh/auto)
 - Source video path and cached metadata (width, height, duration, FPS, file size)
 - Trim settings (start/end times)
-- Crop settings (mode, horizontal/vertical offset, zoom level, output resolution)
+- Crop settings (mode: 세로/가로, horizontal/vertical offset, zoom level, blur radius, output resolution)
 - Ignore regions (array of start/end/label)
 - Subtitle style (per-line font families, sizes, text colors as hex, outline color/width, shadow, bottom margin, line spacing)
 - Metadata overlay settings (enabled flag, title/artist text, fonts, colors, background box opacity/radius, position margins, padding, line spacing)
