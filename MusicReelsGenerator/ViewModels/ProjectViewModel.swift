@@ -57,6 +57,25 @@ class ProjectViewModel: ObservableObject {
     private var timeObserver: Any?
     private let exportService = ExportService()
 
+    // MARK: - Undo / Redo
+
+    let undoHistory = UndoHistory()
+    @Published private(set) var canUndo: Bool = false
+    @Published private(set) var canRedo: Bool = false
+
+    private let snapshotEncoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }()
+    private let snapshotDecoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
+
+    private var suspendUndoRecording = false
+
     var selectedBlock: LyricBlock? {
         guard let id = selectedBlockID else { return nil }
         return project.lyricBlocks.first { $0.id == id }
@@ -78,6 +97,37 @@ class ProjectViewModel: ObservableObject {
 
     init() {
         checkToolAvailability()
+        undoHistory.$canUndo.assign(to: &$canUndo)
+        undoHistory.$canRedo.assign(to: &$canRedo)
+    }
+
+    // MARK: - Undo / Redo API
+
+    /// Capture current project state before a mutation.
+    /// `coalesceKey` groups rapid repeated edits (slider drags, keystrokes)
+    /// into a single undo step.
+    private func recordUndo(label: String, coalesceKey: String? = nil) {
+        if suspendUndoRecording { return }
+        guard let data = try? snapshotEncoder.encode(project) else { return }
+        undoHistory.record(data, label: label, coalesceKey: coalesceKey)
+    }
+
+    func performUndo() {
+        guard let current = try? snapshotEncoder.encode(project),
+              let result = undoHistory.undo(current: current),
+              let restored = try? snapshotDecoder.decode(Project.self, from: result.data) else { return }
+        project = restored
+        isDirty = true
+        statusMessage = "Undo: \(result.label)"
+    }
+
+    func performRedo() {
+        guard let current = try? snapshotEncoder.encode(project),
+              let result = undoHistory.redo(current: current),
+              let restored = try? snapshotDecoder.decode(Project.self, from: result.data) else { return }
+        project = restored
+        isDirty = true
+        statusMessage = "Redo: \(result.label)"
     }
 
     func checkToolAvailability() {
@@ -147,6 +197,8 @@ class ProjectViewModel: ObservableObject {
             project.trimSettings = .fullDuration(metadata.duration)
             project.touch()
             isDirty = true
+            // Undo across a video swap would leave broken state — reset.
+            undoHistory.clear()
 
             setupPlayer(url: url)
             statusMessage = "Video loaded: \(metadata.width)x\(metadata.height), \(TimeFormatter.formatMMSS(metadata.duration))"
@@ -257,6 +309,7 @@ class ProjectViewModel: ObservableObject {
         do {
             let newBlocks = try LyricsParserService.parse(lyricsInputText)
             let oldBlocks = project.lyricBlocks
+            recordUndo(label: "Parse Lyrics")
 
             // Preserve timing/anchor state for blocks whose text is unchanged.
             // Match by (primary, secondary) text, consuming each old block once
@@ -301,6 +354,7 @@ class ProjectViewModel: ObservableObject {
     /// Update a single block's text without touching timing or confidence.
     func updateBlockText(id: UUID, primary: String? = nil, secondary: String? = nil) {
         guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+        recordUndo(label: "Edit Text", coalesceKey: "text-\(id.uuidString)")
         if let p = primary {
             project.lyricBlocks[idx].japanese = p
         }
@@ -313,6 +367,7 @@ class ProjectViewModel: ObservableObject {
 
     func updateBlock(id: UUID, startTime: Double? = nil, endTime: Double? = nil) {
         guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+        recordUndo(label: "Adjust Timing", coalesceKey: "timing-\(id.uuidString)")
 
         if let st = startTime {
             project.lyricBlocks[idx].startTime = st
@@ -344,6 +399,7 @@ class ProjectViewModel: ObservableObject {
     /// Shift all blocks from the selected block onward by a delta
     func shiftFollowingBlocks(fromBlockID id: UUID, delta: Double) {
         guard let startIdx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+        recordUndo(label: "Shift Timing", coalesceKey: "shift-\(id.uuidString)")
 
         for i in startIdx..<project.lyricBlocks.count {
             if let st = project.lyricBlocks[i].startTime {
@@ -376,6 +432,7 @@ class ProjectViewModel: ObservableObject {
     /// Toggle anchor status for a block
     func toggleAnchor(id: UUID) {
         guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+        recordUndo(label: "Toggle Anchor")
         project.lyricBlocks[idx].isAnchor.toggle()
         project.touch()
         isDirty = true
@@ -384,6 +441,7 @@ class ProjectViewModel: ObservableObject {
     // MARK: - Trim Controls
 
     func setTrimStart(to time: Double) {
+        recordUndo(label: "Trim Start", coalesceKey: "trim-start")
         let clamped = max(0, min(time, project.trimSettings.endTime - 0.1))
         project.trimSettings.startTime = clamped
         project.touch()
@@ -391,6 +449,7 @@ class ProjectViewModel: ObservableObject {
     }
 
     func setTrimEnd(to time: Double) {
+        recordUndo(label: "Trim End", coalesceKey: "trim-end")
         let clamped = max(project.trimSettings.startTime + 0.1, min(time, duration))
         project.trimSettings.endTime = clamped
         project.touch()
@@ -406,6 +465,7 @@ class ProjectViewModel: ObservableObject {
     }
 
     func resetTrim() {
+        recordUndo(label: "Reset Trim")
         project.trimSettings.reset(sourceDuration: duration)
         project.touch()
         isDirty = true
@@ -432,6 +492,7 @@ class ProjectViewModel: ObservableObject {
     // MARK: - Ignore Regions
 
     func addIgnoreRegion(startTime: Double, endTime: Double, label: String = "") {
+        recordUndo(label: "Add Ignore Region")
         let region = IgnoreRegion(startTime: startTime, endTime: endTime, label: label)
         project.ignoreRegions.append(region)
         project.ignoreRegions.sort { $0.startTime < $1.startTime }
@@ -441,6 +502,7 @@ class ProjectViewModel: ObservableObject {
     }
 
     func removeIgnoreRegion(id: UUID) {
+        recordUndo(label: "Remove Ignore Region")
         project.ignoreRegions.removeAll { $0.id == id }
         project.touch()
         isDirty = true
@@ -448,6 +510,7 @@ class ProjectViewModel: ObservableObject {
 
     func updateIgnoreRegion(id: UUID, startTime: Double? = nil, endTime: Double? = nil, label: String? = nil) {
         guard let idx = project.ignoreRegions.firstIndex(where: { $0.id == id }) else { return }
+        recordUndo(label: "Edit Ignore Region", coalesceKey: "ignore-\(id.uuidString)")
         if let st = startTime {
             project.ignoreRegions[idx].startTime = max(0, min(st, project.ignoreRegions[idx].endTime - 0.1))
         }
@@ -515,6 +578,7 @@ class ProjectViewModel: ObservableObject {
 
     func setAnchor(id: UUID) {
         guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+        recordUndo(label: "Set Anchor")
         project.lyricBlocks[idx].isAnchor = true
         project.lyricBlocks[idx].isUserAnchor = true
         project.touch()
@@ -524,6 +588,7 @@ class ProjectViewModel: ObservableObject {
 
     func unsetAnchor(id: UUID) {
         guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }) else { return }
+        recordUndo(label: "Release Anchor")
         project.lyricBlocks[idx].isAnchor = false
         project.lyricBlocks[idx].isUserAnchor = false
         project.touch()
@@ -549,6 +614,7 @@ class ProjectViewModel: ObservableObject {
             return
         }
 
+        recordUndo(label: "Correct Between Anchors")
         var totalCorrected = 0
         for pairIdx in 0..<(anchorIndices.count - 1) {
             let corrected = correctSegmentBetween(
@@ -575,6 +641,7 @@ class ProjectViewModel: ObservableObject {
             return
         }
 
+        recordUndo(label: "Correct Region")
         let corrected = correctSegmentBetween(leftAnchorIdx: left, rightAnchorIdx: right)
         project.touch()
         isDirty = true
@@ -696,6 +763,7 @@ class ProjectViewModel: ObservableObject {
             return
         }
 
+        recordUndo(label: "Local Realign")
         isAligning = true
         alignmentProgress = L10n.Status.preparingRealign(lang)
 
@@ -798,6 +866,7 @@ class ProjectViewModel: ObservableObject {
             return
         }
 
+        recordUndo(label: "Auto-Align")
         isAligning = true
         alignmentProgress = "Starting alignment..."
         let pipelineStart = CFAbsoluteTimeGetCurrent()
@@ -922,9 +991,12 @@ class ProjectViewModel: ObservableObject {
             statusMessage = "Alignment complete: \(matched)/\(aligned.count) blocks matched (\(String(format: "%.1f", totalElapsed))s)"
             print("[Alignment] Pipeline complete in \(String(format: "%.1f", totalElapsed))s — \(matched)/\(aligned.count) blocks matched")
 
-            // Auto-correct between anchors if at least 2 anchors exist
+            // Auto-correct between anchors if at least 2 anchors exist.
+            // Bundle into the parent "Auto-Align" undo step — a single Cmd+Z reverts the whole pipeline.
             if anchorCount >= 2 {
+                suspendUndoRecording = true
                 correctBetweenAllAnchors()
+                suspendUndoRecording = false
                 print("[Alignment] Auto-corrected between \(anchorCount) anchors after alignment")
             }
 
@@ -1017,6 +1089,7 @@ class ProjectViewModel: ObservableObject {
             project = try ProjectPersistenceService.load(from: url)
             projectFileURL = url
             isDirty = false
+            undoHistory.clear()
 
             if let videoURL = project.sourceVideoURL,
                FileManager.default.fileExists(atPath: videoURL.path) {
@@ -1042,6 +1115,7 @@ class ProjectViewModel: ObservableObject {
         currentTime = 0
         duration = 0
         cachedWhisperSegments = []
+        undoHistory.clear()
         statusMessage = "New project created."
     }
 
@@ -1050,6 +1124,7 @@ class ProjectViewModel: ObservableObject {
     /// Apply a style preset to the current project.
     /// Copies subtitle and overlay style values; preserves title/artist text content.
     func applyPreset(_ preset: StylePreset) {
+        recordUndo(label: "Apply Preset")
         project.subtitleStyle = preset.subtitleStyle
         preset.overlayStyle.apply(to: &project.metadataOverlay)
         project.touch()

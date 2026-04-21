@@ -30,7 +30,7 @@ struct ContentView: View {
 
                 // Right panel: Inspector
                 InspectorPanelView()
-                    .frame(minWidth: 250, idealWidth: 280, maxWidth: 350)
+                    .frame(minWidth: 260, idealWidth: 300, maxWidth: 400)
             }
 
             Divider()
