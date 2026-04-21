@@ -5,6 +5,14 @@ struct ToolbarView: View {
     @EnvironmentObject var vm: ProjectViewModel
 
     var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            toolbarContent
+                .frame(minWidth: 1280, alignment: .leading)
+                .padding(.vertical, 2)
+        }
+    }
+
+    private var toolbarContent: some View {
         HStack(spacing: 12) {
             // Import video
             Button {

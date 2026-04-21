@@ -26,15 +26,44 @@ struct InspectorPanelView: View {
         }
     }
 
+    private func tabIcon(_ tab: InspectorTab) -> String {
+        switch tab {
+        case .block: return "text.alignleft"
+        case .trim: return "scissors"
+        case .crop: return "crop"
+        case .style: return "paintbrush"
+        case .overlay: return "text.below.photo"
+        case .ignore: return "eye.slash"
+        case .info: return "info.circle"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            // Icon-only segmented control — stays readable at any inspector width.
+            // The current tab's full label is shown below for clarity.
             Picker("", selection: $selectedTab) {
                 ForEach(InspectorTab.allCases, id: \.self) { tab in
-                    Text(tabName(tab)).tag(tab)
+                    Image(systemName: tabIcon(tab))
+                        .help(tabName(tab))
+                        .tag(tab)
                 }
             }
             .pickerStyle(.segmented)
-            .padding(8)
+            .labelsHidden()
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+
+            HStack(spacing: 6) {
+                Image(systemName: tabIcon(selectedTab))
+                    .foregroundColor(.secondary)
+                Text(tabName(selectedTab))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
 
             Divider()
 

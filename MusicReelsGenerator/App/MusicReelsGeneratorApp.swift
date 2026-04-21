@@ -43,14 +43,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard event.modifierFlags.contains(.command),
                   let chars = event.charactersIgnoringModifiers else { return event }
 
+            // Cmd+Z / Shift+Cmd+Z are handled by the SwiftUI Edit menu below —
+            // that path also forwards to any focused text responder first, so
+            // leave them alone here.
             let action: Selector? = switch chars {
             case "v": #selector(NSText.paste(_:))
             case "c": #selector(NSText.copy(_:))
             case "x": #selector(NSText.cut(_:))
             case "a": #selector(NSText.selectAll(_:))
-            case "z": event.modifierFlags.contains(.shift)
-                ? #selector(UndoManager.redo)
-                : #selector(UndoManager.undo)
             default: nil
             }
 
@@ -91,6 +91,9 @@ struct MusicReelsGeneratorApp: App {
             TextEditingCommands()
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updaterController.updater, title: L10n.Menu.checkForUpdates(viewModel.lang))
+            }
+            CommandGroup(replacing: .undoRedo) {
+                UndoRedoCommands(viewModel: viewModel)
             }
             CommandGroup(replacing: .newItem) {
                 Button(L10n.Menu.newProject(viewModel.lang)) {
@@ -161,5 +164,37 @@ struct MusicReelsGeneratorApp: App {
         if panel.runModal() == .OK, let url = panel.url {
             viewModel.saveProjectAs(to: url)
         }
+    }
+}
+
+// MARK: - Undo/Redo Menu Commands
+
+/// Separate View so the menu re-evaluates when undo state changes.
+///
+/// Only forwards `undo:`/`redo:` to the responder chain when the first responder
+/// is actually a text editor. Otherwise NSWindow / NSApp claim the selector via
+/// their default NSResponder handler and swallow the event without doing anything,
+/// which would silently eat our project-level undo.
+private struct UndoRedoCommands: View {
+    @ObservedObject var viewModel: ProjectViewModel
+
+    var body: some View {
+        Button(L10n.Menu.undo(viewModel.lang)) {
+            if Self.forwardToTextResponder("undo:") { return }
+            viewModel.performUndo()
+        }
+        .keyboardShortcut("z", modifiers: .command)
+
+        Button(L10n.Menu.redo(viewModel.lang)) {
+            if Self.forwardToTextResponder("redo:") { return }
+            viewModel.performRedo()
+        }
+        .keyboardShortcut("z", modifiers: [.command, .shift])
+    }
+
+    private static func forwardToTextResponder(_ selectorName: String) -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder,
+              responder is NSText || responder is NSTextView else { return false }
+        return NSApp.sendAction(Selector((selectorName)), to: nil, from: nil)
     }
 }

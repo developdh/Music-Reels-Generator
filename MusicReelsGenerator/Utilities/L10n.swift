@@ -53,6 +53,12 @@ enum L10n {
         static func importVideo(_ l: UILanguage) -> String {
             switch l { case .ko: "비디오 가져오기..."; case .en: "Import Video..."; case .ja: "動画を読み込む..." }
         }
+        static func undo(_ l: UILanguage) -> String {
+            switch l { case .ko: "실행 취소"; case .en: "Undo"; case .ja: "取り消す" }
+        }
+        static func redo(_ l: UILanguage) -> String {
+            switch l { case .ko: "다시 실행"; case .en: "Redo"; case .ja: "やり直す" }
+        }
     }
 
     // MARK: - Toolbar
