@@ -1053,6 +1053,24 @@ class ProjectViewModel: ObservableObject {
         }
     }
 
+    func exportSRT(to outputURL: URL) {
+        do {
+            try SubtitleExportService.exportSRT(project: project, to: outputURL)
+            statusMessage = "SRT exported: \(outputURL.lastPathComponent)"
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    func exportLRC(to outputURL: URL) {
+        do {
+            try SubtitleExportService.exportLRC(project: project, to: outputURL)
+            statusMessage = "LRC exported: \(outputURL.lastPathComponent)"
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
     // MARK: - Persistence
 
     /// Returns true if already has a file URL (saved in-place), false if caller should show Save As panel

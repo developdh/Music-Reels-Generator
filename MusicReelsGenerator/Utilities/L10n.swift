@@ -82,6 +82,15 @@ enum L10n {
         static func export(_ l: UILanguage) -> String {
             switch l { case .ko: "내보내기"; case .en: "Export"; case .ja: "書き出し" }
         }
+        static func exportVideo(_ l: UILanguage) -> String {
+            switch l { case .ko: "영상 (MP4)"; case .en: "Video (MP4)"; case .ja: "動画 (MP4)" }
+        }
+        static func exportSRT(_ l: UILanguage) -> String {
+            switch l { case .ko: "자막 (SRT)"; case .en: "Subtitles (SRT)"; case .ja: "字幕 (SRT)" }
+        }
+        static func exportLRC(_ l: UILanguage) -> String {
+            switch l { case .ko: "가사 싱크 (LRC)"; case .en: "Synced Lyrics (LRC)"; case .ja: "同期歌詞 (LRC)" }
+        }
         static func open(_ l: UILanguage) -> String {
             switch l { case .ko: "열기"; case .en: "Open"; case .ja: "開く" }
         }

@@ -91,12 +91,18 @@ struct ToolbarView: View {
             Divider().frame(height: 20)
 
             // Export
-            Button {
-                exportVideo()
+            Menu {
+                Button(L10n.Toolbar.exportVideo(vm.lang)) { exportVideo() }
+                    .disabled(!vm.project.isReadyForExport)
+                Button(L10n.Toolbar.exportSRT(vm.lang)) { exportSubtitles(format: .srt) }
+                    .disabled(!vm.project.hasTimingData)
+                Button(L10n.Toolbar.exportLRC(vm.lang)) { exportSubtitles(format: .lrc) }
+                    .disabled(!vm.project.hasTimingData)
             } label: {
                 Label(L10n.Toolbar.export(vm.lang), systemImage: "square.and.arrow.up.fill")
             }
-            .disabled(!vm.project.isReadyForExport)
+            .frame(width: 120)
+            .disabled(!vm.project.hasTimingData)
 
             Divider().frame(height: 20)
 
@@ -172,6 +178,31 @@ struct ToolbarView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             Task { await vm.exportVideo(to: url) }
+        }
+    }
+
+    private enum SubtitleFormat { case srt, lrc }
+
+    private func exportSubtitles(format: SubtitleFormat) {
+        let panel = NSSavePanel()
+        let ext: String
+        switch format {
+        case .srt:
+            ext = "srt"
+            panel.nameFieldStringValue = "\(vm.project.title).srt"
+        case .lrc:
+            ext = "lrc"
+            panel.nameFieldStringValue = "\(vm.project.title).lrc"
+        }
+        if let type = UTType(filenameExtension: ext) {
+            panel.allowedContentTypes = [type]
+        }
+
+        if panel.runModal() == .OK, let url = panel.url {
+            switch format {
+            case .srt: vm.exportSRT(to: url)
+            case .lrc: vm.exportLRC(to: url)
+            }
         }
     }
 }
