@@ -60,6 +60,8 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 - **Style Presets** — Save, load, rename, duplicate, and delete reusable style presets (subtitle + overlay styling). Presets persist in Application Support and are reusable across all projects. Presets capture visual styling only, excluding song-specific text content (title/artist text)
 - **Unified Preview/Export Rendering** — Both preview and export use the same Core Graphics subtitle renderer (`SubtitleRenderer`), rendering at 1080x1920 canvas with multi-pass outline/shadow/fill. Preview displays a scaled-down version, ensuring pixel-identical typography
 - **Two-Stage Export** — Stage 1: FFmpeg trim + crop/scale to 1080x1920 (H.264 CRF 18, AAC 192k). Stage 2: AVAssetReader/Writer frame-by-frame burn-in of metadata overlay + subtitle CGImage overlays
+- **Subtitle File Export (LRC / SRT)** — Export aligned lyrics as standalone subtitle files using source-absolute timing (pairs with the original video/audio, not the trimmed export). LRC includes title/artist tags from the metadata overlay and repeats timestamps for the secondary line so bilingual-capable players (Musixmatch, SyncLyrics, etc.) can show translations. SRT writes both lines stacked with `HH:MM:SS,mmm` timestamps
+- **Undo / Redo** — Snapshot-based undo/redo stack (50 steps) with intra-window coalescing so dragging a slider produces one waypoint instead of one per tick. Cmd+Z / Cmd+Shift+Z. Forwards to the focused text editor when typing in a text field, otherwise undoes the project-level mutation
 - **Project Persistence** — Save/load projects as `.mreels` JSON files with backward compatibility for older formats (missing fields get defaults via custom `Decodable` initializers)
 
 ## Requirements
@@ -339,6 +341,8 @@ Click "Export" in the toolbar. Choose a save location. The app will:
 | Next Block | Cmd+Down |
 | Set Block Start | Cmd+[ |
 | Set Block End | Cmd+] |
+| Undo | Cmd+Z |
+| Redo | Cmd+Shift+Z |
 | New Project | Cmd+N |
 | Open Project | Cmd+O |
 | Save Project | Cmd+S |
