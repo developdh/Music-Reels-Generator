@@ -117,6 +117,17 @@ struct TrimBarView: View {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.gray.opacity(0.2))
 
+                // Waveform background
+                if !vm.waveformPeaks.isEmpty {
+                    WaveformView(
+                        peaks: vm.waveformPeaks,
+                        playFrac: playFrac,
+                        startFrac: startFrac,
+                        endFrac: endFrac
+                    )
+                    .padding(.vertical, 2)
+                }
+
                 // Trimmed-out region (before start)
                 Rectangle()
                     .fill(Color.black.opacity(0.3))
@@ -128,9 +139,9 @@ struct TrimBarView: View {
                     .frame(width: max(0, w * (1 - endFrac)))
                     .offset(x: w * endFrac)
 
-                // Active trim region
+                // Active trim region tint
                 Rectangle()
-                    .fill(Color.accentColor.opacity(0.25))
+                    .fill(Color.accentColor.opacity(0.12))
                     .frame(width: max(0, w * (endFrac - startFrac)))
                     .offset(x: w * startFrac)
 

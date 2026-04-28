@@ -54,6 +54,10 @@ class ProjectViewModel: ObservableObject {
     @Published var ffmpegAvailable: Bool = false
     @Published var whisperAvailable: Bool = false
 
+    // MARK: - Waveform
+    @Published var waveformPeaks: [Float] = []
+    private var waveformTask: Task<Void, Never>?
+
     private var timeObserver: Any?
     private let exportService = ExportService()
 
@@ -201,9 +205,28 @@ class ProjectViewModel: ObservableObject {
             undoHistory.clear()
 
             setupPlayer(url: url)
+            generateWaveform(from: url)
             statusMessage = "Video loaded: \(metadata.width)x\(metadata.height), \(TimeFormatter.formatMMSS(metadata.duration))"
         } catch {
             showError(error.localizedDescription)
+        }
+    }
+
+    /// Generate the waveform peak array off the main actor. Failures are silent —
+    /// the waveform is purely a visualization aid.
+    func generateWaveform(from url: URL) {
+        waveformTask?.cancel()
+        waveformPeaks = []
+        waveformTask = Task.detached(priority: .utility) { [weak self] in
+            do {
+                let peaks = try await WaveformService.extractPeaks(from: url, bucketCount: 1500)
+                if Task.isCancelled { return }
+                await MainActor.run { [weak self] in
+                    self?.waveformPeaks = peaks
+                }
+            } catch {
+                print("[Waveform] generation failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -1112,6 +1135,7 @@ class ProjectViewModel: ObservableObject {
             if let videoURL = project.sourceVideoURL,
                FileManager.default.fileExists(atPath: videoURL.path) {
                 setupPlayer(url: videoURL)
+                generateWaveform(from: videoURL)
             }
 
             statusMessage = "Project loaded: \(project.title)"
@@ -1133,6 +1157,8 @@ class ProjectViewModel: ObservableObject {
         currentTime = 0
         duration = 0
         cachedWhisperSegments = []
+        waveformTask?.cancel()
+        waveformPeaks = []
         undoHistory.clear()
         statusMessage = "New project created."
     }

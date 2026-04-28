@@ -12,29 +12,17 @@ struct PlaybackControlsView: View {
                     .monospacedDigit()
                     .frame(width: 60, alignment: .trailing)
 
-                ZStack {
-                    Slider(value: Binding(
-                        get: { vm.currentTime },
-                        set: { vm.seek(to: $0) }
-                    ), in: 0...max(vm.duration, 0.01))
-                    .disabled(vm.player == nil)
-
-                    // Trim range indicator under the slider
-                    if vm.project.trimSettings.isActive(sourceDuration: vm.duration) {
-                        GeometryReader { geo in
-                            let w = geo.size.width
-                            let dur = max(vm.duration, 0.01)
-                            let startFrac = vm.project.trimSettings.startTime / dur
-                            let endFrac = vm.project.trimSettings.endTime / dur
-
-                            Rectangle()
-                                .fill(Color.accentColor.opacity(0.3))
-                                .frame(width: max(0, w * (endFrac - startFrac)), height: 3)
-                                .offset(x: w * startFrac, y: geo.size.height - 3)
-                        }
-                        .allowsHitTesting(false)
-                    }
-                }
+                WaveformScrubberView(
+                    peaks: vm.waveformPeaks,
+                    duration: vm.duration,
+                    currentTime: vm.currentTime,
+                    trimStart: vm.project.trimSettings.startTime,
+                    trimEnd: vm.project.trimSettings.endTime,
+                    isTrimActive: vm.project.trimSettings.isActive(sourceDuration: vm.duration),
+                    isEnabled: vm.player != nil,
+                    onSeek: { vm.seek(to: $0) }
+                )
+                .frame(height: 36)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(TimeFormatter.format(vm.duration))
