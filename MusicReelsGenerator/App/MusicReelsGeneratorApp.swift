@@ -70,6 +70,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct MusicReelsGeneratorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var viewModel = ProjectViewModel()
+    @StateObject private var templateStore = ProjectTemplateStore.shared
+    @State private var showSaveTemplateSheet = false
+    @State private var showManageTemplatesSheet = false
     private let updaterController: SPUStandardUpdaterController
 
     init() {
@@ -85,6 +88,12 @@ struct MusicReelsGeneratorApp: App {
             ContentView()
                 .environmentObject(viewModel)
                 .frame(minWidth: 1100, minHeight: 700)
+                .sheet(isPresented: $showSaveTemplateSheet) {
+                    SaveTemplateSheet(vm: viewModel, store: templateStore)
+                }
+                .sheet(isPresented: $showManageTemplatesSheet) {
+                    ManageTemplatesSheet(vm: viewModel, store: templateStore)
+                }
         }
         .windowStyle(.titleBar)
         .commands {
@@ -100,6 +109,26 @@ struct MusicReelsGeneratorApp: App {
                     viewModel.newProject()
                 }
                 .keyboardShortcut("n", modifiers: .command)
+
+                Menu(L10n.Menu.newFromTemplate(viewModel.lang)) {
+                    if templateStore.templates.isEmpty {
+                        Text(L10n.Menu.noTemplates(viewModel.lang))
+                    } else {
+                        ForEach(templateStore.templates) { template in
+                            Button(template.name) {
+                                viewModel.newProject(fromTemplate: template)
+                            }
+                        }
+                    }
+                    Divider()
+                    Button(L10n.Menu.saveAsTemplate(viewModel.lang)) {
+                        showSaveTemplateSheet = true
+                    }
+                    Button(L10n.Menu.manageTemplates(viewModel.lang)) {
+                        showManageTemplatesSheet = true
+                    }
+                    .disabled(templateStore.templates.isEmpty)
+                }
 
                 Button(L10n.Menu.openProject(viewModel.lang)) {
                     openProject()

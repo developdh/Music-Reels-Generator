@@ -1188,6 +1188,53 @@ class ProjectViewModel: ObservableObject {
         return preset
     }
 
+    // MARK: - Project Templates
+
+    /// Apply a template to the current project. Always overrides style, overlay style,
+    /// language, and alignment mode. Crop mode + blur are only overridden when no video
+    /// has been imported yet (otherwise the user has likely tuned them for this video).
+    func applyTemplate(_ template: ProjectTemplate) {
+        recordUndo(label: "Apply Template")
+
+        project.subtitleStyle = template.subtitleStyle
+        template.overlayStyle.apply(to: &project.metadataOverlay)
+        project.primaryLanguage = template.primaryLanguage
+        alignmentQualityMode = template.alignmentQualityMode
+
+        if !project.hasVideo {
+            project.cropSettings.mode = template.cropMode
+            project.cropSettings.blurRadius = template.horizontalBlurRadius
+        }
+
+        project.touch()
+        isDirty = true
+        statusMessage = L10n.Status.templateApplied(lang, name: template.name)
+    }
+
+    /// Create a fresh project pre-populated from a template.
+    func newProject(fromTemplate template: ProjectTemplate) {
+        newProject()
+        // newProject resets to defaults — apply on top.
+        // Skip the undo entry since the project is brand new.
+        suspendUndoRecording = true
+        applyTemplate(template)
+        suspendUndoRecording = false
+        undoHistory.clear()
+        statusMessage = L10n.Status.templateApplied(lang, name: template.name)
+    }
+
+    /// Save the current project's style/language/layout as a reusable template.
+    @discardableResult
+    func saveCurrentAsTemplate(name: String) -> ProjectTemplate {
+        let template = ProjectTemplateStore.shared.saveTemplate(
+            name: name,
+            project: project,
+            alignmentQualityMode: alignmentQualityMode
+        )
+        statusMessage = L10n.Status.templateSaved(lang, name: name)
+        return template
+    }
+
     // MARK: - Helpers
 
     func showError(_ message: String) {

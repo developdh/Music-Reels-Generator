@@ -53,6 +53,18 @@ enum L10n {
         static func importVideo(_ l: UILanguage) -> String {
             switch l { case .ko: "비디오 가져오기..."; case .en: "Import Video..."; case .ja: "動画を読み込む..." }
         }
+        static func newFromTemplate(_ l: UILanguage) -> String {
+            switch l { case .ko: "템플릿에서 새로 만들기"; case .en: "New from Template"; case .ja: "テンプレートから新規作成" }
+        }
+        static func saveAsTemplate(_ l: UILanguage) -> String {
+            switch l { case .ko: "현재 설정을 템플릿으로 저장…"; case .en: "Save Current as Template…"; case .ja: "現在の設定をテンプレートとして保存…" }
+        }
+        static func manageTemplates(_ l: UILanguage) -> String {
+            switch l { case .ko: "템플릿 관리…"; case .en: "Manage Templates…"; case .ja: "テンプレート管理…" }
+        }
+        static func noTemplates(_ l: UILanguage) -> String {
+            switch l { case .ko: "(저장된 템플릿 없음)"; case .en: "(No templates saved)"; case .ja: "(保存されたテンプレートなし)" }
+        }
         static func undo(_ l: UILanguage) -> String {
             switch l { case .ko: "실행 취소"; case .en: "Undo"; case .ja: "取り消す" }
         }
@@ -455,6 +467,64 @@ enum L10n {
         }
     }
 
+    // MARK: - Project Template Sheets
+
+    enum Template {
+        static func saveTitle(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "현재 설정을 템플릿으로 저장"
+            case .en: "Save Current Settings as Template"
+            case .ja: "現在の設定をテンプレートとして保存"
+            }
+        }
+        static func name(_ l: UILanguage) -> String {
+            switch l { case .ko: "템플릿 이름"; case .en: "Template Name"; case .ja: "テンプレート名" }
+        }
+        static func saveNote(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "자막/오버레이 스타일, 주 언어, 레이아웃 모드, 정렬 엔진 설정이 저장됩니다.\n영상, 가사, 트림, 무시 구간은 포함되지 않습니다."
+            case .en: "Subtitle/overlay style, primary language, layout mode, and alignment engine are saved.\nVideo, lyrics, trim, and ignore regions are not included."
+            case .ja: "字幕/オーバーレイスタイル、主言語、レイアウトモード、整列エンジン設定が保存されます。\n動画、歌詞、トリム、除外区間は含まれません。"
+            }
+        }
+        static func enterName(_ l: UILanguage) -> String {
+            switch l { case .ko: "이름을 입력하세요."; case .en: "Please enter a name."; case .ja: "名前を入力してください。" }
+        }
+        static func duplicateName(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "이미 같은 이름의 템플릿이 있습니다."
+            case .en: "A template with this name already exists."
+            case .ja: "同じ名前のテンプレートが既に存在します。"
+            }
+        }
+        static func manageTitle(_ l: UILanguage) -> String {
+            switch l { case .ko: "템플릿 관리"; case .en: "Manage Templates"; case .ja: "テンプレート管理" }
+        }
+        static func noneStored(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "저장된 템플릿이 없습니다."
+            case .en: "No templates stored."
+            case .ja: "保存されたテンプレートはありません。"
+            }
+        }
+        static func apply(_ l: UILanguage) -> String {
+            switch l { case .ko: "적용"; case .en: "Apply"; case .ja: "適用" }
+        }
+        static func newFromThis(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "이 템플릿으로 새 프로젝트"
+            case .en: "New Project from This"
+            case .ja: "このテンプレートで新規"
+            }
+        }
+        static func rename(_ l: UILanguage) -> String {
+            switch l { case .ko: "이름 변경"; case .en: "Rename"; case .ja: "名前変更" }
+        }
+        static func duplicate(_ l: UILanguage) -> String {
+            switch l { case .ko: "복제"; case .en: "Duplicate"; case .ja: "複製" }
+        }
+    }
+
     // MARK: - Trim Inspector
 
     enum Trim {
@@ -790,6 +860,12 @@ enum L10n {
         }
         static func presetSaved(_ l: UILanguage, name: String) -> String {
             switch l { case .ko: "프리셋 저장됨: \(name)"; case .en: "Preset saved: \(name)"; case .ja: "プリセット保存: \(name)" }
+        }
+        static func templateApplied(_ l: UILanguage, name: String) -> String {
+            switch l { case .ko: "템플릿 적용됨: \(name)"; case .en: "Template applied: \(name)"; case .ja: "テンプレート適用: \(name)" }
+        }
+        static func templateSaved(_ l: UILanguage, name: String) -> String {
+            switch l { case .ko: "템플릿 저장됨: \(name)"; case .en: "Template saved: \(name)"; case .ja: "テンプレート保存: \(name)" }
         }
         static func featureDisabled(_ l: UILanguage) -> String {
             switch l { case .ko: "이 기능은 현재 비활성화 상태입니다."; case .en: "This feature is currently disabled."; case .ja: "この機能は現在無効です。" }
