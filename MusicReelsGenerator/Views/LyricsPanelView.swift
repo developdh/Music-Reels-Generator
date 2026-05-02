@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct LyricsPanelView: View {
     @EnvironmentObject var vm: ProjectViewModel
@@ -14,15 +16,22 @@ struct LyricsPanelView: View {
                 Text(L10n.Lyrics.blocks(vm.lang, count: vm.project.lyricBlocks.count))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                Button {
-                    if !vm.project.lyricBlocks.isEmpty {
-                        vm.syncLyricsInputTextFromBlocks()
+                Menu {
+                    Button(L10n.Lyrics.pasteEdit(vm.lang)) {
+                        if !vm.project.lyricBlocks.isEmpty {
+                            vm.syncLyricsInputTextFromBlocks()
+                        }
+                        showLyricsInput = true
                     }
-                    showLyricsInput = true
+                    Button(L10n.SubtitleImport.menuLabel(vm.lang)) {
+                        importSubtitleFile()
+                    }
                 } label: {
                     Image(systemName: "plus.circle")
                 }
-                .buttonStyle(.borderless)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
                 .help(L10n.Lyrics.pasteEdit(vm.lang))
             }
             .padding(.horizontal, 12)
@@ -54,12 +63,33 @@ struct LyricsPanelView: View {
             Text(L10n.Lyrics.noLyrics(vm.lang))
                 .font(.title3)
                 .foregroundColor(.secondary)
-            Button(L10n.Lyrics.pasteLyrics(vm.lang)) {
-                showLyricsInput = true
+            HStack(spacing: 8) {
+                Button(L10n.Lyrics.pasteLyrics(vm.lang)) {
+                    showLyricsInput = true
+                }
+                Button(L10n.SubtitleImport.menuLabel(vm.lang)) {
+                    importSubtitleFile()
+                }
             }
             Spacer()
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func importSubtitleFile() {
+        let panel = NSOpenPanel()
+        panel.title = L10n.SubtitleImport.panelTitle(vm.lang)
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        var allowed: [UTType] = []
+        if let srt = UTType(filenameExtension: "srt") { allowed.append(srt) }
+        if let lrc = UTType(filenameExtension: "lrc") { allowed.append(lrc) }
+        allowed.append(.plainText)
+        panel.allowedContentTypes = allowed
+
+        if panel.runModal() == .OK, let url = panel.url {
+            vm.importSubtitleFile(url: url)
+        }
     }
 
     private var lyricBlockList: some View {

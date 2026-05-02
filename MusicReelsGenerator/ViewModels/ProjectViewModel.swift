@@ -367,6 +367,29 @@ class ProjectViewModel: ObservableObject {
         }
     }
 
+    /// Replace current blocks with timed lyrics parsed from an LRC or SRT file.
+    func importSubtitleFile(url: URL) {
+        do {
+            let imported = try SubtitleImportService.importFile(url: url)
+            if !project.lyricBlocks.isEmpty {
+                let alert = NSAlert()
+                alert.messageText = L10n.SubtitleImport.replaceTitle(lang)
+                alert.informativeText = L10n.SubtitleImport.replaceMessage(lang, count: imported.count)
+                alert.addButton(withTitle: L10n.SubtitleImport.replaceConfirm(lang))
+                alert.addButton(withTitle: L10n.Common.cancel(lang))
+                if alert.runModal() != .alertFirstButtonReturn { return }
+            }
+
+            recordUndo(label: "Import Subtitles")
+            project.lyricBlocks = imported
+            project.touch()
+            isDirty = true
+            statusMessage = L10n.SubtitleImport.imported(lang, count: imported.count, name: url.lastPathComponent)
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
     /// Rebuild `lyricsInputText` from current blocks so the bulk editor opens pre-filled.
     func syncLyricsInputTextFromBlocks() {
         lyricsInputText = project.lyricBlocks.map { block in

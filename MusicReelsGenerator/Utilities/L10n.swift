@@ -721,6 +721,49 @@ enum L10n {
         }
     }
 
+    // MARK: - Subtitle Import
+
+    enum SubtitleImport {
+        static func menuLabel(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "LRC/SRT 파일에서 가져오기..."
+            case .en: "Import from LRC/SRT..."
+            case .ja: "LRC/SRTファイルから読み込み..."
+            }
+        }
+        static func panelTitle(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "자막 파일 가져오기"
+            case .en: "Import Subtitle File"
+            case .ja: "字幕ファイルを読み込む"
+            }
+        }
+        static func replaceTitle(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "기존 가사를 덮어쓸까요?"
+            case .en: "Replace existing lyrics?"
+            case .ja: "既存の歌詞を置き換えますか？"
+            }
+        }
+        static func replaceMessage(_ l: UILanguage, count: Int) -> String {
+            switch l {
+            case .ko: "현재 가사가 모두 제거되고 가져온 \(count)개 블록으로 교체됩니다."
+            case .en: "Current lyrics will be removed and replaced with \(count) imported blocks."
+            case .ja: "現在の歌詞は削除され、読み込まれた\(count)ブロックに置き換えられます。"
+            }
+        }
+        static func replaceConfirm(_ l: UILanguage) -> String {
+            switch l { case .ko: "교체"; case .en: "Replace"; case .ja: "置き換え" }
+        }
+        static func imported(_ l: UILanguage, count: Int, name: String) -> String {
+            switch l {
+            case .ko: "\(name)에서 \(count)개 블록 가져옴"
+            case .en: "Imported \(count) blocks from \(name)"
+            case .ja: "\(name)から\(count)ブロックを読み込み"
+            }
+        }
+    }
+
     // MARK: - Playback
 
     enum Playback {
