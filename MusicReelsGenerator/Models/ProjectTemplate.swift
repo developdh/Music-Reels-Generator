@@ -19,6 +19,8 @@ struct ProjectTemplate: Identifiable, Codable, Equatable {
     // Layout preferences
     var cropMode: CropMode
     var horizontalBlurRadius: Double
+    var outputAspectRatio: OutputAspectRatio
+    var outputResolution: OutputResolution
 
     // Alignment preference
     var alignmentQualityMode: AlignmentQualityMode
@@ -35,6 +37,8 @@ struct ProjectTemplate: Identifiable, Codable, Equatable {
         primaryLanguage: PrimaryLanguage,
         cropMode: CropMode,
         horizontalBlurRadius: Double,
+        outputAspectRatio: OutputAspectRatio = .vertical9_16,
+        outputResolution: OutputResolution = .full,
         alignmentQualityMode: AlignmentQualityMode,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -48,6 +52,8 @@ struct ProjectTemplate: Identifiable, Codable, Equatable {
         self.primaryLanguage = primaryLanguage
         self.cropMode = cropMode
         self.horizontalBlurRadius = horizontalBlurRadius
+        self.outputAspectRatio = outputAspectRatio
+        self.outputResolution = outputResolution
         self.alignmentQualityMode = alignmentQualityMode
         self.version = Self.currentVersion
     }
@@ -65,6 +71,8 @@ struct ProjectTemplate: Identifiable, Codable, Equatable {
             primaryLanguage: project.primaryLanguage,
             cropMode: project.cropSettings.mode,
             horizontalBlurRadius: project.cropSettings.blurRadius,
+            outputAspectRatio: project.cropSettings.outputAspectRatio,
+            outputResolution: project.cropSettings.outputResolution,
             alignmentQualityMode: alignmentQualityMode
         )
     }
@@ -81,6 +89,8 @@ struct ProjectTemplate: Identifiable, Codable, Equatable {
         primaryLanguage = try c.decodeIfPresent(PrimaryLanguage.self, forKey: .primaryLanguage) ?? .japanese
         cropMode = try c.decodeIfPresent(CropMode.self, forKey: .cropMode) ?? .vertical
         horizontalBlurRadius = try c.decodeIfPresent(Double.self, forKey: .horizontalBlurRadius) ?? 20.0
+        outputAspectRatio = try c.decodeIfPresent(OutputAspectRatio.self, forKey: .outputAspectRatio) ?? .vertical9_16
+        outputResolution = try c.decodeIfPresent(OutputResolution.self, forKey: .outputResolution) ?? .full
         alignmentQualityMode = try c.decodeIfPresent(AlignmentQualityMode.self, forKey: .alignmentQualityMode) ?? .legacy
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? Self.currentVersion
     }

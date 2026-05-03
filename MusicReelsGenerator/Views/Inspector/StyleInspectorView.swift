@@ -128,7 +128,10 @@ struct StyleInspectorView: View {
                     HStack {
                         Text(L10n.Style.bottom(vm.lang))
                             .frame(width: 52, alignment: .trailing)
-                        Slider(value: $vm.project.subtitleStyle.bottomMargin, in: 50...960, step: 5)
+                        // Max = canvas height / 2 (subtitle stays in the lower half).
+                        Slider(value: $vm.project.subtitleStyle.bottomMargin,
+                               in: 50...max(60, Double(vm.project.cropSettings.outputHeight) / 2.0),
+                               step: 5)
                         Text("\(Int(vm.project.subtitleStyle.bottomMargin))")
                             .monospacedDigit()
                             .frame(width: 32)

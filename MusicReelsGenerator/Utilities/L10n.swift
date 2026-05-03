@@ -341,6 +341,66 @@ enum L10n {
         static func output(_ l: UILanguage) -> String {
             switch l { case .ko: "출력"; case .en: "Output"; case .ja: "出力" }
         }
+        static func aspectRatio(_ l: UILanguage) -> String {
+            switch l { case .ko: "출력 비율"; case .en: "Aspect Ratio"; case .ja: "出力比率" }
+        }
+        static func resolution(_ l: UILanguage) -> String {
+            switch l { case .ko: "해상도"; case .en: "Resolution"; case .ja: "解像度" }
+        }
+        static func resolutionLabel(_ l: UILanguage, w: Int, h: Int) -> String {
+            switch l {
+            case .ko: "해상도: \(w)×\(h)"
+            case .en: "Resolution: \(w)×\(h)"
+            case .ja: "解像度: \(w)×\(h)"
+            }
+        }
+        static func aspectLabel(_ l: UILanguage, aspect: String, purpose: String) -> String {
+            switch l {
+            case .ko: "비율: \(aspect) (\(purpose))"
+            case .en: "Aspect: \(aspect) (\(purpose))"
+            case .ja: "比率: \(aspect) (\(purpose))"
+            }
+        }
+    }
+
+    // MARK: - Output Aspect Ratio names
+
+    enum OutputAspect {
+        static func displayName(_ ar: OutputAspectRatio, _ l: UILanguage) -> String {
+            _ = l
+            return ar.ratioLabel
+        }
+        static func purpose(_ ar: OutputAspectRatio, _ l: UILanguage) -> String {
+            switch (ar, l) {
+            case (.vertical9_16, .ko):   return "릴스/쇼츠"
+            case (.vertical9_16, .en):   return "Reels/Shorts"
+            case (.vertical9_16, .ja):   return "リール/ショート"
+            case (.portrait4_5, .ko):    return "인스타 피드"
+            case (.portrait4_5, .en):    return "Instagram feed"
+            case (.portrait4_5, .ja):    return "インスタフィード"
+            case (.square1_1, .ko):      return "정사각"
+            case (.square1_1, .en):      return "Square"
+            case (.square1_1, .ja):      return "正方形"
+            case (.horizontal16_9, .ko): return "유튜브 가로"
+            case (.horizontal16_9, .en): return "YouTube horizontal"
+            case (.horizontal16_9, .ja): return "YouTube横"
+            }
+        }
+    }
+
+    // MARK: - Output Resolution names
+
+    enum OutputRes {
+        static func displayName(_ r: OutputResolution, _ l: UILanguage) -> String {
+            switch (r, l) {
+            case (.full, .ko):    return "1080p"
+            case (.full, .en):    return "1080p"
+            case (.full, .ja):    return "1080p"
+            case (.compact, .ko): return "720p"
+            case (.compact, .en): return "720p"
+            case (.compact, .ja): return "720p"
+            }
+        }
     }
 
     // MARK: - Style Inspector

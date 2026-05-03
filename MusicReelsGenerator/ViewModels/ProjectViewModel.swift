@@ -1228,6 +1228,14 @@ class ProjectViewModel: ObservableObject {
             project.cropSettings.mode = template.cropMode
             project.cropSettings.blurRadius = template.horizontalBlurRadius
         }
+        // Output canvas (aspect + resolution) is always applied — it's part of the
+        // template's visual identity, independent of the source video.
+        project.cropSettings.outputAspectRatio = template.outputAspectRatio
+        project.cropSettings.outputResolution = template.outputResolution
+        let maxMargin = Double(project.cropSettings.outputHeight) / 2.0
+        if project.subtitleStyle.bottomMargin > maxMargin {
+            project.subtitleStyle.bottomMargin = max(50, maxMargin)
+        }
 
         project.touch()
         isDirty = true

@@ -91,8 +91,8 @@ struct CroppedVideoPreview: View {
     var body: some View {
         GeometryReader { geo in
             let containerSize = geo.size
-            // Fit a 9:16 rectangle into the available container
-            let targetAspect: CGFloat = 9.0 / 16.0
+            // Fit the configured output aspect rectangle into the available container
+            let targetAspect = CGFloat(cropSettings.outputAspectFraction)
             let previewSize = fitSize(aspect: targetAspect, into: containerSize)
 
             ZStack {

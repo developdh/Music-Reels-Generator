@@ -12,7 +12,35 @@ struct CropInspectorView: View {
             Text(L10n.Crop.settings(vm.lang))
                 .font(.headline)
 
-            // Mode picker
+            // Output aspect ratio picker
+            GroupBox(L10n.Crop.aspectRatio(vm.lang)) {
+                Picker("", selection: $vm.project.cropSettings.outputAspectRatio) {
+                    ForEach(OutputAspectRatio.allCases) { ar in
+                        Text(L10n.OutputAspect.displayName(ar, vm.lang)).tag(ar)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: vm.project.cropSettings.outputAspectRatio) { _, _ in
+                    clampBottomMargin()
+                    vm.isDirty = true
+                }
+            }
+
+            // Output resolution picker
+            GroupBox(L10n.Crop.resolution(vm.lang)) {
+                Picker("", selection: $vm.project.cropSettings.outputResolution) {
+                    ForEach(OutputResolution.allCases) { res in
+                        Text(L10n.OutputRes.displayName(res, vm.lang)).tag(res)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: vm.project.cropSettings.outputResolution) { _, _ in
+                    clampBottomMargin()
+                    vm.isDirty = true
+                }
+            }
+
+            // Crop layout mode picker (cover-crop vs fit + blur)
             GroupBox(L10n.Crop.mode(vm.lang)) {
                 Picker("", selection: $vm.project.cropSettings.mode) {
                     ForEach(CropMode.allCases) { mode in
@@ -125,13 +153,27 @@ struct CropInspectorView: View {
 
             GroupBox(L10n.Crop.output(vm.lang)) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Resolution: \(vm.project.cropSettings.outputWidth)x\(vm.project.cropSettings.outputHeight)")
+                    Text(L10n.Crop.resolutionLabel(vm.lang,
+                        w: vm.project.cropSettings.outputWidth,
+                        h: vm.project.cropSettings.outputHeight))
                         .font(.caption)
-                    Text("Aspect: 9:16 (Reels/Shorts)")
+                    Text(L10n.Crop.aspectLabel(vm.lang,
+                        aspect: vm.project.cropSettings.outputAspectRatio.ratioLabel,
+                        purpose: L10n.OutputAspect.purpose(vm.project.cropSettings.outputAspectRatio, vm.lang)))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
+        }
+    }
+
+    /// When the output canvas height shrinks (e.g. switching from 9:16 to 16:9),
+    /// the bottomMargin slider's max moves. Clamp the stored value so the subtitle
+    /// doesn't end up off-canvas at the top.
+    private func clampBottomMargin() {
+        let maxMargin = Double(vm.project.cropSettings.outputHeight) / 2.0
+        if vm.project.subtitleStyle.bottomMargin > maxMargin {
+            vm.project.subtitleStyle.bottomMargin = max(50, maxMargin)
         }
     }
 }
