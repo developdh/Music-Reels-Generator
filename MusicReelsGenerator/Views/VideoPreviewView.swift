@@ -59,6 +59,7 @@ struct VideoPreviewView: View {
                     cropSettings: vm.project.cropSettings,
                     subtitleStyle: vm.project.subtitleStyle,
                     metadataOverlay: vm.project.metadataOverlay,
+                    watermark: vm.project.watermark,
                     currentBlock: vm.currentBlock
                 )
             } else {
@@ -86,6 +87,7 @@ struct CroppedVideoPreview: View {
     let cropSettings: CropSettings
     let subtitleStyle: SubtitleStyle
     let metadataOverlay: MetadataOverlaySettings
+    let watermark: WatermarkSettings
     let currentBlock: LyricBlock?
 
     var body: some View {
@@ -111,6 +113,13 @@ struct CroppedVideoPreview: View {
                     let canvasSize = CGSize(
                         width: CGFloat(cropSettings.outputWidth),
                         height: CGFloat(cropSettings.outputHeight)
+                    )
+
+                    // Watermark overlay (drawn under metadata + subtitle so they stay on top)
+                    WatermarkOverlayPreview(
+                        settings: watermark,
+                        previewSize: previewSize,
+                        canvasSize: canvasSize
                     )
 
                     // Metadata overlay (top-left title/artist)
@@ -216,6 +225,23 @@ struct CroppedVideoPreview: View {
             return byWidth
         }
         return byHeight
+    }
+}
+
+/// Preview watermark overlay using the same renderer as export.
+struct WatermarkOverlayPreview: View {
+    let settings: WatermarkSettings
+    let previewSize: CGSize
+    let canvasSize: CGSize
+
+    var body: some View {
+        if let cgImage = SubtitleRenderer.renderWatermark(settings, canvasSize: canvasSize) {
+            Image(nsImage: NSImage(cgImage: cgImage, size: canvasSize))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: previewSize.width, height: previewSize.height)
+                .allowsHitTesting(false)
+        }
     }
 }
 

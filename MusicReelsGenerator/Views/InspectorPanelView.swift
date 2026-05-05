@@ -10,6 +10,7 @@ struct InspectorPanelView: View {
         case crop = "Crop"
         case style = "Style"
         case overlay = "Overlay"
+        case watermark = "Watermark"
         case ignore = "Ignore"
         case info = "Info"
     }
@@ -21,6 +22,7 @@ struct InspectorPanelView: View {
         case .crop: return L10n.Tab.crop(vm.lang)
         case .style: return L10n.Tab.style(vm.lang)
         case .overlay: return L10n.Tab.overlay(vm.lang)
+        case .watermark: return L10n.Tab.watermark(vm.lang)
         case .ignore: return L10n.Tab.ignore(vm.lang)
         case .info: return L10n.Tab.info(vm.lang)
         }
@@ -33,6 +35,7 @@ struct InspectorPanelView: View {
         case .crop: return "crop"
         case .style: return "paintbrush"
         case .overlay: return "text.below.photo"
+        case .watermark: return "photo.badge.checkmark"
         case .ignore: return "eye.slash"
         case .info: return "info.circle"
         }
@@ -80,6 +83,8 @@ struct InspectorPanelView: View {
                         StyleInspectorView()
                     case .overlay:
                         MetadataOverlayInspectorView()
+                    case .watermark:
+                        WatermarkInspectorView()
                     case .ignore:
                         IgnoreRegionsInspectorView()
                     case .info:

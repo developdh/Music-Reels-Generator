@@ -262,6 +262,65 @@ enum SubtitleRenderer {
         return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
+    // MARK: - Watermark Overlay
+
+    /// Render the watermark image at the configured corner with margin/size/opacity.
+    /// Output is in NSImage bottom-left coordinate space matching the other overlay renderers.
+    static func renderWatermark(
+        _ settings: WatermarkSettings,
+        canvasSize: CGSize
+    ) -> CGImage? {
+        guard settings.shouldRender, let data = settings.imageData else { return nil }
+        guard let source = NSImage(data: data) else { return nil }
+        // Resolve the source image's CGImage so we can draw it directly with alpha.
+        var srcRect = NSRect(origin: .zero, size: source.size)
+        guard let srcCG = source.cgImage(forProposedRect: &srcRect, context: nil, hints: nil) else {
+            return nil
+        }
+
+        let canvasW = canvasSize.width
+        let canvasH = canvasSize.height
+        let imgPixelW = CGFloat(srcCG.width)
+        let imgPixelH = CGFloat(srcCG.height)
+        guard imgPixelW > 0, imgPixelH > 0 else { return nil }
+
+        // Target draw size: width is widthPercent of canvas; height keeps aspect ratio.
+        let drawW = max(1, canvasW * CGFloat(settings.widthPercent) / 100.0)
+        let drawH = max(1, drawW * imgPixelH / imgPixelW)
+
+        // Anchor coordinates in NSImage (bottom-left origin) space.
+        let drawX: CGFloat
+        let drawY: CGFloat
+        switch settings.position {
+        case .topLeft:
+            drawX = settings.xMargin
+            drawY = canvasH - settings.yMargin - drawH
+        case .topRight:
+            drawX = canvasW - settings.xMargin - drawW
+            drawY = canvasH - settings.yMargin - drawH
+        case .bottomLeft:
+            drawX = settings.xMargin
+            drawY = settings.yMargin
+        case .bottomRight:
+            drawX = canvasW - settings.xMargin - drawW
+            drawY = settings.yMargin
+        }
+
+        let canvasImage = NSImage(size: NSSize(width: canvasW, height: canvasH))
+        canvasImage.lockFocus()
+        guard let ctx = NSGraphicsContext.current?.cgContext else {
+            canvasImage.unlockFocus()
+            return nil
+        }
+        ctx.saveGState()
+        ctx.setAlpha(CGFloat(settings.opacity))
+        ctx.interpolationQuality = .high
+        ctx.draw(srcCG, in: CGRect(x: drawX, y: drawY, width: drawW, height: drawH))
+        ctx.restoreGState()
+        canvasImage.unlockFocus()
+        return canvasImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    }
+
     /// Render all timed blocks into a lookup table of CGImages.
     static func prerenderAll(
         blocks: [LyricBlock],

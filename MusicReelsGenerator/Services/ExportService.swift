@@ -162,6 +162,7 @@ class ExportService {
             blocks: exportBlocks,
             style: project.subtitleStyle,
             metadataOverlay: project.metadataOverlay,
+            watermark: project.watermark,
             outputSize: CGSize(width: outW, height: outH),
             onProgress: { p in
                 onProgress(.exporting(progress: 0.4 + p * 0.6))
@@ -180,6 +181,7 @@ class ExportService {
         blocks: [LyricBlock],
         style: SubtitleStyle,
         metadataOverlay: MetadataOverlaySettings,
+        watermark: WatermarkSettings,
         outputSize: CGSize,
         onProgress: @escaping (Double) -> Void
     ) async throws {
@@ -269,6 +271,11 @@ class ExportService {
             metadataOverlay, canvasSize: outputSize
         )
 
+        // --- Pre-render watermark (static) ---
+        let watermarkImage = SubtitleRenderer.renderWatermark(
+            watermark, canvasSize: outputSize
+        )
+
         // --- Process ---
         reader.startReading()
         writer.startWriting()
@@ -319,13 +326,14 @@ class ExportService {
             guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { continue }
 
             let subtitleImage = activeBlock.flatMap { subtitleImages[$0.id] }
-            let needsOverlay = subtitleImage != nil || metadataImage != nil
+            let needsOverlay = subtitleImage != nil || metadataImage != nil || watermarkImage != nil
 
             if needsOverlay {
                 let newBuffer = drawOverlays(
                     onto: imageBuffer, width: width, height: height,
                     pool: pixelBufferAdaptor.pixelBufferPool,
                     metadataImage: metadataImage,
+                    watermarkImage: watermarkImage,
                     subtitleImage: subtitleImage
                 )
                 pixelBufferAdaptor.append(newBuffer ?? imageBuffer, withPresentationTime: presentationTime)
@@ -360,6 +368,7 @@ class ExportService {
         width: Int, height: Int,
         pool: CVPixelBufferPool?,
         metadataImage: CGImage?,
+        watermarkImage: CGImage?,
         subtitleImage: CGImage?
     ) -> CVPixelBuffer? {
         var newBuffer: CVPixelBuffer?
@@ -399,6 +408,11 @@ class ExportService {
         }
 
         let frameRect = CGRect(x: 0, y: 0, width: width, height: height)
+
+        // Draw watermark (under metadata + subtitle so they always read on top)
+        if let watermarkImage {
+            ctx.draw(watermarkImage, in: frameRect)
+        }
 
         // Draw metadata overlay (top-left title/artist)
         if let metadataImage {

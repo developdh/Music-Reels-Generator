@@ -139,6 +139,9 @@ enum L10n {
         static func ignore(_ l: UILanguage) -> String {
             switch l { case .ko: "무시"; case .en: "Ignore"; case .ja: "除外" }
         }
+        static func watermark(_ l: UILanguage) -> String {
+            switch l { case .ko: "워터마크"; case .en: "Watermark"; case .ja: "ロゴ" }
+        }
         static func info(_ l: UILanguage) -> String {
             switch l { case .ko: "정보"; case .en: "Info"; case .ja: "情報" }
         }
@@ -778,6 +781,91 @@ enum L10n {
         }
         static func parseImport(_ l: UILanguage) -> String {
             switch l { case .ko: "파싱 & 가져오기"; case .en: "Parse & Import"; case .ja: "解析＆取り込み" }
+        }
+    }
+
+    // MARK: - Watermark Inspector
+
+    enum Watermark {
+        static func title(_ l: UILanguage) -> String {
+            switch l { case .ko: "워터마크 / 로고"; case .en: "Watermark / Logo"; case .ja: "ウォーターマーク / ロゴ" }
+        }
+        static func enable(_ l: UILanguage) -> String {
+            switch l { case .ko: "워터마크 활성화"; case .en: "Enable Watermark"; case .ja: "ウォーターマークを有効化" }
+        }
+        static func image(_ l: UILanguage) -> String {
+            switch l { case .ko: "이미지"; case .en: "Image"; case .ja: "画像" }
+        }
+        static func choose(_ l: UILanguage) -> String {
+            switch l { case .ko: "이미지 선택…"; case .en: "Choose Image…"; case .ja: "画像を選択…" }
+        }
+        static func remove(_ l: UILanguage) -> String {
+            switch l { case .ko: "이미지 제거"; case .en: "Remove Image"; case .ja: "画像を削除" }
+        }
+        static func imageSize(_ l: UILanguage, kb: Int) -> String {
+            switch l {
+            case .ko: "이미지 크기: \(kb) KB"
+            case .en: "Image size: \(kb) KB"
+            case .ja: "画像サイズ: \(kb) KB"
+            }
+        }
+        static func position(_ l: UILanguage) -> String {
+            switch l { case .ko: "위치"; case .en: "Position"; case .ja: "位置" }
+        }
+        static func appearance(_ l: UILanguage) -> String {
+            switch l { case .ko: "외관"; case .en: "Appearance"; case .ja: "外観" }
+        }
+        static func width(_ l: UILanguage) -> String {
+            switch l { case .ko: "너비"; case .en: "Width"; case .ja: "幅" }
+        }
+        static func opacity(_ l: UILanguage) -> String {
+            switch l { case .ko: "투명도"; case .en: "Opacity"; case .ja: "不透明度" }
+        }
+        static func xMargin(_ l: UILanguage) -> String {
+            switch l { case .ko: "X 여백"; case .en: "X Margin"; case .ja: "X余白" }
+        }
+        static func yMargin(_ l: UILanguage) -> String {
+            switch l { case .ko: "Y 여백"; case .en: "Y Margin"; case .ja: "Y余白" }
+        }
+        static func note(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "워터마크는 자막과 제목 오버레이 아래 레이어에 합성됩니다. 너비는 캔버스 너비의 백분율(%) 입니다."
+            case .en: "The watermark renders under the metadata + subtitle layers. Width is a percentage of the canvas width."
+            case .ja: "ウォーターマークは字幕とタイトルオーバーレイの下のレイヤーに合成されます。幅はキャンバス幅の%です。"
+            }
+        }
+        static func loadFailed(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "이미지를 불러오지 못했습니다."
+            case .en: "Could not load the image."
+            case .ja: "画像を読み込めませんでした。"
+            }
+        }
+        static func tooLarge(_ l: UILanguage, mb: Int) -> String {
+            switch l {
+            case .ko: "이미지가 너무 큽니다 (\(mb) MB 이하만 허용)."
+            case .en: "Image is too large (max \(mb) MB)."
+            case .ja: "画像が大きすぎます (最大 \(mb) MB)。"
+            }
+        }
+    }
+
+    enum WatermarkPos {
+        static func displayName(_ p: WatermarkPosition, _ l: UILanguage) -> String {
+            switch (p, l) {
+            case (.topLeft, .ko):     return "↖ 좌상"
+            case (.topLeft, .en):     return "↖ Top-Left"
+            case (.topLeft, .ja):     return "↖ 左上"
+            case (.topRight, .ko):    return "↗ 우상"
+            case (.topRight, .en):    return "↗ Top-Right"
+            case (.topRight, .ja):    return "↗ 右上"
+            case (.bottomLeft, .ko):  return "↙ 좌하"
+            case (.bottomLeft, .en):  return "↙ Bottom-Left"
+            case (.bottomLeft, .ja):  return "↙ 左下"
+            case (.bottomRight, .ko): return "↘ 우하"
+            case (.bottomRight, .en): return "↘ Bottom-Right"
+            case (.bottomRight, .ja): return "↘ 右下"
+            }
         }
     }
 

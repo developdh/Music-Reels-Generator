@@ -10,6 +10,7 @@ struct Project: Codable, Identifiable {
     var subtitleStyle: SubtitleStyle
     var primaryLanguage: PrimaryLanguage
     var metadataOverlay: MetadataOverlaySettings
+    var watermark: WatermarkSettings
     var ignoreRegions: [IgnoreRegion]
     var lyricBlocks: [LyricBlock]
     var createdAt: Date
@@ -28,6 +29,7 @@ struct Project: Codable, Identifiable {
         self.subtitleStyle = SubtitleStyle()
         self.primaryLanguage = .japanese
         self.metadataOverlay = MetadataOverlaySettings()
+        self.watermark = WatermarkSettings()
         self.ignoreRegions = []
         self.lyricBlocks = []
         self.createdAt = Date()
@@ -70,6 +72,8 @@ struct Project: Codable, Identifiable {
             ?? .japanese
         metadataOverlay = try container.decodeIfPresent(MetadataOverlaySettings.self, forKey: .metadataOverlay)
             ?? MetadataOverlaySettings()
+        watermark = try container.decodeIfPresent(WatermarkSettings.self, forKey: .watermark)
+            ?? WatermarkSettings()
         ignoreRegions = try container.decodeIfPresent([IgnoreRegion].self, forKey: .ignoreRegions)
             ?? []
         lyricBlocks = try container.decode([LyricBlock].self, forKey: .lyricBlocks)
