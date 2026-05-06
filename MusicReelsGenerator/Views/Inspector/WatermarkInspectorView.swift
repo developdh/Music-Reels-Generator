@@ -5,10 +5,6 @@ import UniformTypeIdentifiers
 struct WatermarkInspectorView: View {
     @EnvironmentObject var vm: ProjectViewModel
 
-    /// Soft cap on the embedded image size (5 MB). Anything larger and the project
-    /// file balloons unnecessarily — guide the user to a smaller logo.
-    private let maxImageBytes: Int = 5 * 1024 * 1024
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.Watermark.title(vm.lang))
@@ -151,26 +147,6 @@ struct WatermarkInspectorView: View {
         panel.allowedContentTypes = allowed
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            let raw = try Data(contentsOf: url)
-            // Re-encode through NSImage → PNG so all formats land as PNG bytes.
-            guard let img = NSImage(data: raw),
-                  let tiff = img.tiffRepresentation,
-                  let rep = NSBitmapImageRep(data: tiff),
-                  let png = rep.representation(using: .png, properties: [:]) else {
-                vm.showError(L10n.Watermark.loadFailed(vm.lang))
-                return
-            }
-            if png.count > maxImageBytes {
-                vm.showError(L10n.Watermark.tooLarge(vm.lang, mb: maxImageBytes / (1024 * 1024)))
-                return
-            }
-            vm.project.watermark.imageData = png
-            vm.project.touch()
-            vm.isDirty = true
-        } catch {
-            vm.showError(error.localizedDescription)
-        }
+        vm.setWatermarkImage(from: url)
     }
 }

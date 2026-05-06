@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var vm: ProjectViewModel
+    @State private var isDropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,6 +48,35 @@ struct ContentView: View {
         .sheet(isPresented: $vm.showURLImportSheet) {
             URLImportSheet()
                 .environmentObject(vm)
+        }
+        .overlay {
+            if isDropTargeted {
+                ZStack {
+                    Color.accentColor.opacity(0.08)
+                    VStack(spacing: 8) {
+                        Image(systemName: "tray.and.arrow.down.fill")
+                            .font(.system(size: 44))
+                        Text(L10n.DragDrop.hint(vm.lang))
+                            .font(.headline)
+                    }
+                    .foregroundColor(.accentColor)
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 0)
+                .stroke(Color.accentColor, lineWidth: isDropTargeted ? 3 : 0)
+                .allowsHitTesting(false)
+        )
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first else { return false }
+            vm.handleDroppedURL(url)
+            return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted
         }
     }
 }

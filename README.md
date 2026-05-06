@@ -35,6 +35,7 @@ An example source video (`GreenlightsSerenade3.mp4`) is included in the reposito
 ## Features
 
 - **Video Import** — Load any local video file (.mp4, .mov, .avi), extract metadata (dimensions, duration, FPS, file size), preview in-app with AVPlayerLayer
+- **Drag & Drop Import** — Drop any supported file onto the app window: `.mp4`/`.mov`/`.avi`/`.m4v`/`.mkv`/`.webm` to import as source video, `.mreels` to open a project (with unsaved-changes warning), `.lrc`/`.srt` to import timed lyrics, or any image (`.png`/`.jpeg`/`.heic`/`.webp`/etc.) to set as the watermark. The window highlights with an accent border and a centered hint while you're dragging
 - **URL Import** — Download videos directly from YouTube and other supported sites via an external `yt_download.sh` script (powered by yt-dlp). Progress is streamed to the UI in real-time. The script is distributed separately in Application Support for update-safe deployment
 - **Auto-Update** — Built-in Sparkle update framework checks for new releases from GitHub Releases. Available via the app menu "Check for Updates…"
 - **Multi-Language Support** — Configurable primary language for speech recognition: Japanese, Korean, English, Chinese, or Auto-detect (multilingual). Language picker in the toolbar, saved per-project

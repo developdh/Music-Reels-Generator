@@ -848,6 +848,53 @@ enum L10n {
             case .ja: "画像が大きすぎます (最大 \(mb) MB)。"
             }
         }
+        static func imageSetFromDrop(_ l: UILanguage, name: String) -> String {
+            switch l {
+            case .ko: "워터마크 이미지 설정됨: \(name)"
+            case .en: "Watermark image set: \(name)"
+            case .ja: "ウォーターマーク画像を設定: \(name)"
+            }
+        }
+    }
+
+    // MARK: - Drag & Drop
+
+    enum DragDrop {
+        static func hint(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "여기에 놓아 가져오기 (영상 / 프로젝트 / 자막 / 워터마크 이미지)"
+            case .en: "Drop to import (video / project / subtitles / watermark image)"
+            case .ja: "ここにドロップして取り込み (動画 / プロジェクト / 字幕 / ロゴ画像)"
+            }
+        }
+        static func unsupported(_ l: UILanguage, ext: String) -> String {
+            switch l {
+            case .ko: "지원하지 않는 파일 형식입니다 (.\(ext))"
+            case .en: "Unsupported file type (.\(ext))"
+            case .ja: "サポートされていないファイル形式 (.\(ext))"
+            }
+        }
+        static func unsavedTitle(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "저장되지 않은 변경사항이 있습니다"
+            case .en: "Unsaved changes"
+            case .ja: "未保存の変更があります"
+            }
+        }
+        static func unsavedMessage(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "현재 프로젝트의 변경사항이 사라집니다. 계속하시겠습니까?"
+            case .en: "Changes to the current project will be lost. Continue?"
+            case .ja: "現在のプロジェクトの変更が失われます。続行しますか？"
+            }
+        }
+        static func discardOpen(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "버리고 열기"
+            case .en: "Discard & Open"
+            case .ja: "破棄して開く"
+            }
+        }
     }
 
     enum WatermarkPos {

@@ -367,6 +367,65 @@ class ProjectViewModel: ObservableObject {
         }
     }
 
+    /// Route a file dropped onto the window to the right import path based on extension.
+    /// Single-file drops only — additional URLs in the same drop are ignored.
+    func handleDroppedURL(_ url: URL) {
+        let ext = url.pathExtension.lowercased()
+        switch ext {
+        case ProjectPersistenceService.fileExtension:
+            if isDirty {
+                let alert = NSAlert()
+                alert.messageText = L10n.DragDrop.unsavedTitle(lang)
+                alert.informativeText = L10n.DragDrop.unsavedMessage(lang)
+                alert.addButton(withTitle: L10n.DragDrop.discardOpen(lang))
+                alert.addButton(withTitle: L10n.Common.cancel(lang))
+                if alert.runModal() != .alertFirstButtonReturn { return }
+            }
+            loadProject(from: url)
+
+        case "mp4", "mov", "avi", "m4v", "mkv", "webm":
+            Task { await importVideo(url: url) }
+
+        case "lrc", "srt":
+            importSubtitleFile(url: url)
+
+        case "png", "jpg", "jpeg", "heic", "webp", "gif", "tiff", "bmp":
+            setWatermarkImage(from: url)
+
+        default:
+            showError(L10n.DragDrop.unsupported(lang, ext: ext))
+        }
+    }
+
+    /// Load an image file as the project's watermark, re-encoding to PNG and
+    /// embedding it inside the project. Reused by both the watermark inspector
+    /// and the drag-and-drop handler.
+    func setWatermarkImage(from url: URL) {
+        let maxBytes = 5 * 1024 * 1024
+        do {
+            let raw = try Data(contentsOf: url)
+            guard let img = NSImage(data: raw),
+                  let tiff = img.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiff),
+                  let png = rep.representation(using: .png, properties: [:]) else {
+                showError(L10n.Watermark.loadFailed(lang))
+                return
+            }
+            if png.count > maxBytes {
+                showError(L10n.Watermark.tooLarge(lang, mb: maxBytes / (1024 * 1024)))
+                return
+            }
+            recordUndo(label: "Set Watermark")
+            project.watermark.imageData = png
+            project.watermark.enabled = true
+            project.touch()
+            isDirty = true
+            statusMessage = L10n.Watermark.imageSetFromDrop(lang, name: url.lastPathComponent)
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
     /// Replace current blocks with timed lyrics parsed from an LRC or SRT file.
     func importSubtitleFile(url: URL) {
         do {
