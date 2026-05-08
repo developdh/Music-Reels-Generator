@@ -248,13 +248,30 @@ class ProjectViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.currentTime = t
-                // Stop at trim end
-                let trimEnd = self.project.trimSettings.endTime
-                if trimEnd > 0 && t >= trimEnd && self.isPlaying {
-                    self.player?.pause()
-                    self.isPlaying = false
-                    self.seek(to: trimEnd)
+                self.handlePlaybackTimeAdvance(t)
+            }
+        }
+    }
+
+    /// During playback, jump from the end of one trim range to the start of the next
+    /// (or pause if we ran past the last range). Inactive trim → no-op.
+    private func handlePlaybackTimeAdvance(_ t: Double) {
+        guard isPlaying else { return }
+        let trim = project.trimSettings
+        guard trim.isActive(sourceDuration: duration) else { return }
+        let sorted = trim.sortedRanges
+        // Find which range we're in (or just past).
+        for (i, range) in sorted.enumerated() {
+            // Slight tolerance so the boundary triggers reliably across the periodic observer cadence.
+            if t >= range.endTime - 0.05 && t < range.endTime + 1.0 {
+                if i + 1 < sorted.count {
+                    seek(to: sorted[i + 1].startTime)
+                } else {
+                    player?.pause()
+                    isPlaying = false
+                    seek(to: range.endTime)
                 }
+                return
             }
         }
     }
@@ -266,15 +283,16 @@ class ProjectViewModel: ObservableObject {
         if isPlaying {
             player.pause()
         } else {
-            // Jump to start if at the end, or respect trim bounds
-            let trimStart = project.trimSettings.startTime
-            let trimEnd = project.trimSettings.endTime
-            if trimEnd > 0 && currentTime >= trimEnd - 0.15 {
-                seek(to: trimStart)
-            } else if currentTime >= duration - 0.15 {
-                seek(to: trimStart)
-            } else if currentTime < trimStart {
-                seek(to: trimStart)
+            // Range-aware resume: if we're in a gap or past the last range, jump to the
+            // first range that starts at or after currentTime. Falls back to source start.
+            let sorted = project.trimSettings.sortedRanges
+            if let containing = sorted.first(where: { $0.startTime <= currentTime && currentTime < $0.endTime - 0.15 }) {
+                _ = containing  // already inside a kept range — just play
+            } else if let next = sorted.first(where: { $0.startTime > currentTime - 0.05 }) {
+                seek(to: next.startTime)
+            } else if let first = sorted.first {
+                // Past the last range — wrap to the first.
+                seek(to: first.startTime)
             }
             player.play()
         }
@@ -582,6 +600,81 @@ class ProjectViewModel: ObservableObject {
 
     func nudgeTrimEnd(by delta: Double) {
         setTrimEnd(to: project.trimSettings.endTime + delta)
+    }
+
+    // MARK: - Multi-Range Trim API
+
+    /// Add a new trim range starting at the current playback time. The end time is set to
+    /// either +5 s or the start of the next range, whichever comes first. Source-end
+    /// is the upper bound. Newly created ranges are kept sorted by start time.
+    func addTrimRange(at sourceTime: Double? = nil) {
+        recordUndo(label: "Add Trim Range")
+        let start = max(0, min(sourceTime ?? currentTime, duration))
+        // Default end: 5s after start or next range's start, capped at source duration.
+        let nextStart = project.trimSettings.sortedRanges.first(where: { $0.startTime > start })?.startTime ?? duration
+        let end = min(start + 5.0, nextStart, duration)
+        guard end > start + 0.05 else {
+            showError(L10n.Trim.cannotAddRange(lang))
+            return
+        }
+        project.trimSettings.ranges.append(TrimRange(startTime: start, endTime: end))
+        project.trimSettings.ranges.sort { $0.startTime < $1.startTime }
+        project.touch()
+        isDirty = true
+    }
+
+    func removeTrimRange(id: UUID) {
+        guard project.trimSettings.ranges.count > 1 else {
+            // Don't allow removing the last range — leaves the project unable to export.
+            return
+        }
+        recordUndo(label: "Remove Trim Range")
+        project.trimSettings.ranges.removeAll { $0.id == id }
+        project.touch()
+        isDirty = true
+    }
+
+    func setRangeStart(id: UUID, to time: Double) {
+        guard let idx = project.trimSettings.ranges.firstIndex(where: { $0.id == id }) else { return }
+        recordUndo(label: "Range Start", coalesceKey: "range-start-\(id.uuidString)")
+        var ranges = project.trimSettings.ranges
+        let upperBound = ranges[idx].endTime - 0.1
+        let lowerBound = idx > 0 ? ranges[idx - 1].endTime : 0
+        ranges[idx].startTime = max(lowerBound, min(time, upperBound))
+        project.trimSettings.ranges = ranges
+        project.touch()
+        isDirty = true
+    }
+
+    func setRangeEnd(id: UUID, to time: Double) {
+        guard let idx = project.trimSettings.ranges.firstIndex(where: { $0.id == id }) else { return }
+        recordUndo(label: "Range End", coalesceKey: "range-end-\(id.uuidString)")
+        var ranges = project.trimSettings.ranges
+        let lowerBound = ranges[idx].startTime + 0.1
+        let upperBound = idx + 1 < ranges.count ? ranges[idx + 1].startTime : duration
+        ranges[idx].endTime = max(lowerBound, min(time, upperBound))
+        project.trimSettings.ranges = ranges
+        project.touch()
+        isDirty = true
+    }
+
+    func setRangeStartToCurrent(id: UUID) { setRangeStart(id: id, to: currentTime) }
+    func setRangeEndToCurrent(id: UUID)   { setRangeEnd(id: id, to: currentTime) }
+
+    func nudgeRangeStart(id: UUID, by delta: Double) {
+        guard let r = project.trimSettings.ranges.first(where: { $0.id == id }) else { return }
+        setRangeStart(id: id, to: r.startTime + delta)
+    }
+
+    func nudgeRangeEnd(id: UUID, by delta: Double) {
+        guard let r = project.trimSettings.ranges.first(where: { $0.id == id }) else { return }
+        setRangeEnd(id: id, to: r.endTime + delta)
+    }
+
+    /// Seek to the start of a specific trim range (used by inspector "play this range" buttons).
+    func seekToRange(id: UUID) {
+        guard let r = project.trimSettings.ranges.first(where: { $0.id == id }) else { return }
+        seek(to: r.startTime)
     }
 
     /// Trimmed duration for display

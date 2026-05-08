@@ -615,6 +615,39 @@ enum L10n {
         static func resetTrim(_ l: UILanguage) -> String {
             switch l { case .ko: "트림 초기화 (전체 길이)"; case .en: "Reset Trim (Full Duration)"; case .ja: "トリムリセット（全長）" }
         }
+        static func addRange(_ l: UILanguage) -> String {
+            switch l { case .ko: "구간 추가"; case .en: "Add Range"; case .ja: "区間を追加" }
+        }
+        static func removeRange(_ l: UILanguage) -> String {
+            switch l { case .ko: "구간 삭제"; case .en: "Remove range"; case .ja: "区間を削除" }
+        }
+        static func playRange(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "이 구간 시작으로 이동"
+            case .en: "Seek to range start"
+            case .ja: "この区間の開始へ"
+            }
+        }
+        static func rangeHeader(_ l: UILanguage, index: Int) -> String {
+            switch l {
+            case .ko: "구간 #\(index)"
+            case .en: "Range #\(index)"
+            case .ja: "区間 #\(index)"
+            }
+        }
+        static func totalDuration(_ l: UILanguage) -> String {
+            switch l { case .ko: "전체 길이"; case .en: "Total"; case .ja: "合計" }
+        }
+        static func rangeCount(_ l: UILanguage) -> String {
+            switch l { case .ko: "구간 수"; case .en: "Ranges"; case .ja: "区間数" }
+        }
+        static func cannotAddRange(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "현재 위치에는 새 구간을 추가할 공간이 없습니다."
+            case .en: "Not enough room to add a range at the current position."
+            case .ja: "現在位置に新しい区間を追加する余地がありません。"
+            }
+        }
     }
 
     // MARK: - Overlay Inspector

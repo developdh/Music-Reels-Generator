@@ -6,8 +6,19 @@ struct TrimInspectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.Trim.settings(vm.lang))
-                .font(.headline)
+            HStack {
+                Text(L10n.Trim.settings(vm.lang))
+                    .font(.headline)
+                Spacer()
+                if vm.project.hasVideo {
+                    Button {
+                        vm.addTrimRange()
+                    } label: {
+                        Label(L10n.Trim.addRange(vm.lang), systemImage: "plus")
+                    }
+                    .controlSize(.small)
+                }
+            }
 
             if !vm.project.hasVideo {
                 VStack(spacing: 8) {
@@ -19,71 +30,26 @@ struct TrimInspectorView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // Trim Start
-                GroupBox(L10n.Trim.trimStart(vm.lang)) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(TimeFormatter.format(vm.project.trimSettings.startTime))
-                                .monospacedDigit()
-                                .font(.title3)
-                            Spacer()
-                            Button(L10n.Trim.setToCurrent(vm.lang)) {
-                                vm.setTrimStartToCurrent()
-                            }
-                            .controlSize(.small)
-                        }
-
-                        HStack(spacing: 4) {
-                            Button("-1s") { vm.nudgeTrimStart(by: -1) }
-                            Button("-0.1s") { vm.nudgeTrimStart(by: -0.1) }
-                            Button("+0.1s") { vm.nudgeTrimStart(by: 0.1) }
-                            Button("+1s") { vm.nudgeTrimStart(by: 1) }
-                        }
-                        .controlSize(.mini)
-                    }
-                }
-
-                // Trim End
-                GroupBox(L10n.Trim.trimEnd(vm.lang)) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(TimeFormatter.format(vm.project.trimSettings.endTime))
-                                .monospacedDigit()
-                                .font(.title3)
-                            Spacer()
-                            Button(L10n.Trim.setToCurrent(vm.lang)) {
-                                vm.setTrimEndToCurrent()
-                            }
-                            .controlSize(.small)
-                        }
-
-                        HStack(spacing: 4) {
-                            Button("-1s") { vm.nudgeTrimEnd(by: -1) }
-                            Button("-0.1s") { vm.nudgeTrimEnd(by: -0.1) }
-                            Button("+0.1s") { vm.nudgeTrimEnd(by: 0.1) }
-                            Button("+1s") { vm.nudgeTrimEnd(by: 1) }
-                        }
-                        .controlSize(.mini)
-                    }
+                ForEach(Array(vm.project.trimSettings.sortedRanges.enumerated()), id: \.element.id) { index, range in
+                    TrimRangeBox(index: index + 1, range: range)
                 }
 
                 // Summary
                 GroupBox(L10n.Crop.output(vm.lang)) {
                     VStack(alignment: .leading, spacing: 4) {
-                        LabeledContent(L10n.Trim.duration(vm.lang)) {
+                        LabeledContent(L10n.Trim.totalDuration(vm.lang)) {
                             Text(TimeFormatter.formatMMSS(vm.trimmedDuration))
                                 .monospacedDigit()
                         }
-                        LabeledContent(L10n.Trim.range(vm.lang)) {
-                            Text("\(TimeFormatter.format(vm.project.trimSettings.startTime)) — \(TimeFormatter.format(vm.project.trimSettings.endTime))")
+                        LabeledContent(L10n.Trim.rangeCount(vm.lang)) {
+                            Text("\(vm.project.trimSettings.ranges.count)")
                                 .monospacedDigit()
-                                .font(.caption)
                         }
                     }
                     .font(.caption)
                 }
 
-                // Trim bar visualization (drag green/red handles to adjust)
+                // Trim bar visualization
                 TrimBarView()
                     .frame(height: 36)
                     .padding(.top, 4)
@@ -98,7 +64,90 @@ struct TrimInspectorView: View {
     }
 }
 
-/// Interactive trim bar with draggable start/end handles
+/// One range row in the inspector — start/end controls + remove.
+private struct TrimRangeBox: View {
+    @EnvironmentObject var vm: ProjectViewModel
+    let index: Int
+    let range: TrimRange
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(L10n.Trim.rangeHeader(vm.lang, index: index))
+                        .font(.subheadline.weight(.medium))
+                    Spacer()
+                    Button {
+                        vm.seekToRange(id: range.id)
+                    } label: {
+                        Image(systemName: "play.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(L10n.Trim.playRange(vm.lang))
+                    if vm.project.trimSettings.ranges.count > 1 {
+                        Button {
+                            vm.removeTrimRange(id: range.id)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .help(L10n.Trim.removeRange(vm.lang))
+                    }
+                }
+
+                HStack {
+                    Text(L10n.Ignore.startLabel(vm.lang))
+                        .font(.caption)
+                        .frame(width: 38, alignment: .leading)
+                    Text(TimeFormatter.format(range.startTime))
+                        .monospacedDigit()
+                    Spacer()
+                    Button(L10n.Ignore.current(vm.lang)) {
+                        vm.setRangeStartToCurrent(id: range.id)
+                    }
+                    .controlSize(.small)
+                }
+                HStack(spacing: 4) {
+                    Spacer().frame(width: 38)
+                    Button("-1s") { vm.nudgeRangeStart(id: range.id, by: -1) }
+                    Button("-0.1s") { vm.nudgeRangeStart(id: range.id, by: -0.1) }
+                    Button("+0.1s") { vm.nudgeRangeStart(id: range.id, by: 0.1) }
+                    Button("+1s") { vm.nudgeRangeStart(id: range.id, by: 1) }
+                }
+                .controlSize(.mini)
+
+                HStack {
+                    Text(L10n.Ignore.endLabel(vm.lang))
+                        .font(.caption)
+                        .frame(width: 38, alignment: .leading)
+                    Text(TimeFormatter.format(range.endTime))
+                        .monospacedDigit()
+                    Spacer()
+                    Button(L10n.Ignore.current(vm.lang)) {
+                        vm.setRangeEndToCurrent(id: range.id)
+                    }
+                    .controlSize(.small)
+                }
+                HStack(spacing: 4) {
+                    Spacer().frame(width: 38)
+                    Button("-1s") { vm.nudgeRangeEnd(id: range.id, by: -1) }
+                    Button("-0.1s") { vm.nudgeRangeEnd(id: range.id, by: -0.1) }
+                    Button("+0.1s") { vm.nudgeRangeEnd(id: range.id, by: 0.1) }
+                    Button("+1s") { vm.nudgeRangeEnd(id: range.id, by: 1) }
+                }
+                .controlSize(.mini)
+
+                Text(L10n.Ignore.length(vm.lang, time: TimeFormatter.formatMMSS(range.duration)))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+/// Visual trim bar: shows every kept range over the source duration.
+/// Drag handles for the first range stay editable; additional ranges are display-only
+/// (use the inspector controls for fine adjustments).
 struct TrimBarView: View {
     @EnvironmentObject var vm: ProjectViewModel
     private let handleWidth: CGFloat = 10
@@ -108,12 +157,13 @@ struct TrimBarView: View {
         GeometryReader { geo in
             let w = geo.size.width
             let dur = max(vm.duration, 0.01)
-            let startFrac = vm.project.trimSettings.startTime / dur
-            let endFrac = vm.project.trimSettings.endTime / dur
             let playFrac = vm.currentTime / dur
+            let ranges = vm.project.trimSettings.sortedRanges
+            let firstStartFrac = ranges.first.map { $0.startTime / dur } ?? 0
+            let firstEndFrac = ranges.first.map { $0.endTime / dur } ?? 1
 
             ZStack(alignment: .leading) {
-                // Full duration background
+                // Full duration background (darkened — represents trimmed-out region)
                 RoundedRectangle(cornerRadius: 4)
                     .fill(Color.gray.opacity(0.2))
 
@@ -122,28 +172,33 @@ struct TrimBarView: View {
                     WaveformView(
                         peaks: vm.waveformPeaks,
                         playFrac: playFrac,
-                        startFrac: startFrac,
-                        endFrac: endFrac
+                        startFrac: firstStartFrac,
+                        endFrac: firstEndFrac
                     )
                     .padding(.vertical, 2)
                 }
 
-                // Trimmed-out region (before start)
+                // Darken everything first; then highlight kept ranges on top.
                 Rectangle()
                     .fill(Color.black.opacity(0.3))
-                    .frame(width: max(0, w * startFrac))
 
-                // Trimmed-out region (after end)
-                Rectangle()
-                    .fill(Color.black.opacity(0.3))
-                    .frame(width: max(0, w * (1 - endFrac)))
-                    .offset(x: w * endFrac)
-
-                // Active trim region tint
-                Rectangle()
-                    .fill(Color.accentColor.opacity(0.12))
-                    .frame(width: max(0, w * (endFrac - startFrac)))
-                    .offset(x: w * startFrac)
+                ForEach(ranges) { range in
+                    let s = max(0, range.startTime / dur)
+                    let e = min(1, range.endTime / dur)
+                    Rectangle()
+                        .fill(Color.accentColor.opacity(0.18))
+                        .frame(width: max(0, w * (e - s)))
+                        .offset(x: w * s)
+                    // Cut a transparent hole over this range (so the waveform shows through clearly)
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(width: max(0, w * (e - s)))
+                        .offset(x: w * s)
+                        .overlay(
+                            Rectangle()
+                                .stroke(Color.accentColor.opacity(0.6), lineWidth: 1)
+                        )
+                }
 
                 // Playhead
                 Rectangle()
@@ -151,27 +206,29 @@ struct TrimBarView: View {
                     .frame(width: 1.5)
                     .offset(x: w * playFrac)
 
-                // Draggable start handle
-                TrimHandle(color: .green)
-                    .offset(x: w * startFrac - handleWidth / 2)
-                    .gesture(
-                        DragGesture(minimumDistance: 1)
-                            .onChanged { value in
-                                let frac = max(0, min(value.location.x / w, 1))
-                                vm.setTrimStart(to: frac * dur)
-                            }
-                    )
-
-                // Draggable end handle
-                TrimHandle(color: .red)
-                    .offset(x: w * endFrac - handleWidth / 2)
-                    .gesture(
-                        DragGesture(minimumDistance: 1)
-                            .onChanged { value in
-                                let frac = max(0, min(value.location.x / w, 1))
-                                vm.setTrimEnd(to: frac * dur)
-                            }
-                    )
+                // Draggable handles for the FIRST range (kept for backwards-compat ergonomics).
+                if let first = ranges.first {
+                    let startFrac = first.startTime / dur
+                    let endFrac = first.endTime / dur
+                    TrimHandle(color: .green)
+                        .offset(x: w * startFrac - handleWidth / 2)
+                        .gesture(
+                            DragGesture(minimumDistance: 1)
+                                .onChanged { value in
+                                    let frac = max(0, min(value.location.x / w, 1))
+                                    vm.setRangeStart(id: first.id, to: frac * dur)
+                                }
+                        )
+                    TrimHandle(color: .red)
+                        .offset(x: w * endFrac - handleWidth / 2)
+                        .gesture(
+                            DragGesture(minimumDistance: 1)
+                                .onChanged { value in
+                                    let frac = max(0, min(value.location.x / w, 1))
+                                    vm.setRangeEnd(id: first.id, to: frac * dur)
+                                }
+                        )
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }

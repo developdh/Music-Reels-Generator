@@ -59,93 +59,72 @@ class ExportService {
 
         let crop = project.cropSettings
         var trim = project.trimSettings
-        // Safety: if trim end is 0 or invalid, use full duration
-        if trim.endTime <= trim.startTime {
+        // Safety: empty or invalid trim → full source
+        if trim.ranges.isEmpty || trim.duration <= 0 {
             trim = .fullDuration(project.videoMetadata.duration)
         }
         let outW = crop.outputWidth
         let outH = crop.outputHeight
         let meta = project.videoMetadata
 
-        // --- Step 1: FFmpeg trim + crop/scale → intermediate file ---
+        let filterChain = buildCropFilterChain(crop: crop, meta: meta, outW: outW, outH: outH)
+
+        // --- Step 1: FFmpeg trim + crop/scale per range → concat into intermediate file ---
         let tempDir = "/tmp/mreels_export"
         try? FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
         let croppedURL = URL(fileURLWithPath: "\(tempDir)/cropped.mp4")
         try? FileManager.default.removeItem(at: croppedURL)
 
-        let sourceW = Double(meta.width)
-        let sourceH = Double(meta.height)
-        let targetW = Double(outW)
-        let targetH = Double(outH)
+        let sortedRanges = trim.sortedRanges
 
-        let filterChain: String
+        if sortedRanges.count == 1 {
+            // Single-range fast path: one FFmpeg pass directly to the cropped intermediate.
+            try await runTrimCrop(
+                ffmpeg: ffmpeg,
+                inputURL: videoURL,
+                range: sortedRanges[0],
+                filterChain: filterChain,
+                outputURL: croppedURL
+            )
+        } else {
+            // Multi-range: encode each segment separately, then concat (no re-encode).
+            var segmentURLs: [URL] = []
+            for (i, range) in sortedRanges.enumerated() {
+                let segURL = URL(fileURLWithPath: "\(tempDir)/seg_\(i).mp4")
+                try? FileManager.default.removeItem(at: segURL)
+                let segProgress = 0.05 + Double(i) / Double(sortedRanges.count) * 0.30
+                onProgress(.exporting(progress: segProgress))
+                try await runTrimCrop(
+                    ffmpeg: ffmpeg,
+                    inputURL: videoURL,
+                    range: range,
+                    filterChain: filterChain,
+                    outputURL: segURL
+                )
+                segmentURLs.append(segURL)
+            }
 
-        switch crop.mode {
-        case .vertical:
-            // 세로모드: scale-to-fill (cover) + crop with offset
-            let zoom = crop.zoomScale
-            let scaleFactor = max(targetW / sourceW, targetH / sourceH) * zoom
-            let scaledW = Int((sourceW * scaleFactor).rounded(.up))
-            let scaledH = Int((sourceH * scaleFactor).rounded(.up))
-            let evenScaledW = scaledW + (scaledW % 2)
-            let evenScaledH = scaledH + (scaledH % 2)
-            let overflowX = Double(evenScaledW) - targetW
-            let overflowY = Double(evenScaledH) - targetH
-            let cropX = Int(((crop.horizontalOffset + 1.0) / 2.0 * overflowX).rounded())
-            let cropY = Int(((crop.verticalOffset + 1.0) / 2.0 * overflowY).rounded())
-            filterChain = "scale=\(evenScaledW):\(evenScaledH),crop=\(outW):\(outH):\(cropX):\(cropY)"
+            // concat demuxer needs a list file with absolute paths
+            let listURL = URL(fileURLWithPath: "\(tempDir)/concat_list.txt")
+            let listBody = segmentURLs.map { "file '\($0.path)'" }.joined(separator: "\n")
+            try listBody.write(to: listURL, atomically: true, encoding: .utf8)
 
-        case .horizontal:
-            // 가로모드: blurred background + fitted foreground overlay
-            let blurLuma = Int(crop.blurRadius)
-            let blurChroma = max(blurLuma / 4, 1)
-            let zoom = crop.zoomScale
+            let concatArgs: [String] = [
+                "-f", "concat", "-safe", "0",
+                "-i", listURL.path,
+                "-c", "copy",
+                "-movflags", "+faststart",
+                "-y", croppedURL.path
+            ]
+            onProgress(.exporting(progress: 0.36))
+            let concatResult = try await ProcessRunner.run(ffmpeg, arguments: concatArgs)
+            guard concatResult.succeeded else {
+                throw ExportError.exportFailed(concatResult.stderr)
+            }
 
-            // Foreground: scale to fit inside canvas (preserve aspect ratio), apply zoom
-            let fitScale = min(targetW / sourceW, targetH / sourceH) * zoom
-            var fgW = Int((sourceW * fitScale).rounded())
-            var fgH = Int((sourceH * fitScale).rounded())
-            // Clamp to canvas
-            fgW = min(fgW, outW)
-            fgH = min(fgH, outH)
-            // Even dimensions
-            fgW += fgW % 2
-            fgH += fgH % 2
-
-            // Foreground vertical position from verticalOffset (-1..1)
-            let maxOffsetY = Int(targetH) - fgH
-            let overlayY = Int(((crop.verticalOffset + 1.0) / 2.0) * Double(maxOffsetY))
-            let overlayX = (outW - fgW) / 2
-
-            filterChain = """
-            split=2[bg][fg];\
-            [bg]scale=\(outW):\(outH):force_original_aspect_ratio=increase,\
-            crop=\(outW):\(outH),boxblur=\(blurLuma):\(blurChroma)[bgblur];\
-            [fg]scale=\(fgW):\(fgH)[fgfit];\
-            [bgblur][fgfit]overlay=\(overlayX):\(overlayY)
-            """
-        }
-
-        // Build FFmpeg args with trim via -ss (seek) and -t (duration)
-        var ffmpegArgs: [String] = []
-        ffmpegArgs += ["-ss", String(format: "%.3f", trim.startTime)]
-        ffmpegArgs += ["-i", videoURL.path]
-        ffmpegArgs += ["-t", String(format: "%.3f", trim.duration)]
-        ffmpegArgs += [
-            "-vf", filterChain,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            "-c:a", "aac", "-b:a", "192k",
-            "-r", "30",
-            "-movflags", "+faststart",
-            "-y", croppedURL.path
-        ]
-
-        onProgress(.exporting(progress: 0.05))
-        print("FFmpeg crop+trim: \(ffmpeg) \(ffmpegArgs.joined(separator: " "))")
-
-        let cropResult = try await ProcessRunner.run(ffmpeg, arguments: ffmpegArgs)
-        guard cropResult.succeeded else {
-            throw ExportError.exportFailed(cropResult.stderr)
+            // Cleanup segment temp files
+            for url in segmentURLs { try? FileManager.default.removeItem(at: url) }
+            try? FileManager.default.removeItem(at: listURL)
         }
 
         onProgress(.exporting(progress: 0.4))
@@ -431,4 +410,85 @@ class ExportService {
     }
 
     func cancel() {}
+
+    // MARK: - FFmpeg helpers (multi-range trim/crop)
+
+    /// Build the crop/scale FFmpeg filter chain matching the project's crop mode.
+    /// Identical math to the previous single-pass implementation, just factored out.
+    private func buildCropFilterChain(
+        crop: CropSettings,
+        meta: VideoMetadata,
+        outW: Int,
+        outH: Int
+    ) -> String {
+        let sourceW = Double(meta.width)
+        let sourceH = Double(meta.height)
+        let targetW = Double(outW)
+        let targetH = Double(outH)
+
+        switch crop.mode {
+        case .vertical:
+            let zoom = crop.zoomScale
+            let scaleFactor = max(targetW / sourceW, targetH / sourceH) * zoom
+            let scaledW = Int((sourceW * scaleFactor).rounded(.up))
+            let scaledH = Int((sourceH * scaleFactor).rounded(.up))
+            let evenScaledW = scaledW + (scaledW % 2)
+            let evenScaledH = scaledH + (scaledH % 2)
+            let overflowX = Double(evenScaledW) - targetW
+            let overflowY = Double(evenScaledH) - targetH
+            let cropX = Int(((crop.horizontalOffset + 1.0) / 2.0 * overflowX).rounded())
+            let cropY = Int(((crop.verticalOffset + 1.0) / 2.0 * overflowY).rounded())
+            return "scale=\(evenScaledW):\(evenScaledH),crop=\(outW):\(outH):\(cropX):\(cropY)"
+
+        case .horizontal:
+            let blurLuma = Int(crop.blurRadius)
+            let blurChroma = max(blurLuma / 4, 1)
+            let zoom = crop.zoomScale
+            let fitScale = min(targetW / sourceW, targetH / sourceH) * zoom
+            var fgW = Int((sourceW * fitScale).rounded())
+            var fgH = Int((sourceH * fitScale).rounded())
+            fgW = min(fgW, outW)
+            fgH = min(fgH, outH)
+            fgW += fgW % 2
+            fgH += fgH % 2
+            let maxOffsetY = Int(targetH) - fgH
+            let overlayY = Int(((crop.verticalOffset + 1.0) / 2.0) * Double(maxOffsetY))
+            let overlayX = (outW - fgW) / 2
+            return """
+            split=2[bg][fg];\
+            [bg]scale=\(outW):\(outH):force_original_aspect_ratio=increase,\
+            crop=\(outW):\(outH),boxblur=\(blurLuma):\(blurChroma)[bgblur];\
+            [fg]scale=\(fgW):\(fgH)[fgfit];\
+            [bgblur][fgfit]overlay=\(overlayX):\(overlayY)
+            """
+        }
+    }
+
+    /// Run FFmpeg to trim a single source range and crop/scale it to the output canvas.
+    /// Each invocation produces a self-contained MP4 ready for concat-demuxer stitching.
+    private func runTrimCrop(
+        ffmpeg: String,
+        inputURL: URL,
+        range: TrimRange,
+        filterChain: String,
+        outputURL: URL
+    ) async throws {
+        var args: [String] = []
+        args += ["-ss", String(format: "%.3f", range.startTime)]
+        args += ["-i", inputURL.path]
+        args += ["-t", String(format: "%.3f", range.duration)]
+        args += [
+            "-vf", filterChain,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k",
+            "-r", "30",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            "-y", outputURL.path
+        ]
+        let result = try await ProcessRunner.run(ffmpeg, arguments: args)
+        guard result.succeeded else {
+            throw ExportError.exportFailed(result.stderr)
+        }
+    }
 }
