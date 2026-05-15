@@ -602,6 +602,15 @@ class ProjectViewModel: ObservableObject {
         setTrimEnd(to: project.trimSettings.endTime + delta)
     }
 
+    func setCrossfadeDuration(_ seconds: Double) {
+        let clamped = max(0, min(seconds, 2.0))
+        guard abs(project.trimSettings.crossfadeDuration - clamped) > 0.001 else { return }
+        recordUndo(label: "Set Crossfade")
+        project.trimSettings.crossfadeDuration = clamped
+        project.touch()
+        isDirty = true
+    }
+
     // MARK: - Multi-Range Trim API
 
     /// Add a new trim range starting at the current playback time. The end time is set to

@@ -26,8 +26,22 @@ struct TrimSettings: Codable, Equatable {
     /// A single full-duration range is the default (= "no trimming").
     var ranges: [TrimRange]
 
-    init(ranges: [TrimRange] = []) {
+    /// Crossfade duration (seconds) inserted between consecutive ranges during export.
+    /// 0 = hard cut (default, identical to v1.18 behavior). Range 0...2.0.
+    /// Only takes effect when there are 2+ ranges; preview playback is still a hard cut.
+    var crossfadeDuration: Double
+
+    init(ranges: [TrimRange] = [], crossfadeDuration: Double = 0) {
         self.ranges = ranges
+        self.crossfadeDuration = crossfadeDuration
+    }
+
+    /// Effective crossfade duration: clamped to [0, min(rangeDurations)/2] so xfade
+    /// never exceeds any participating clip. Returns 0 if fewer than 2 ranges.
+    var effectiveCrossfade: Double {
+        guard ranges.count >= 2, crossfadeDuration > 0 else { return 0 }
+        let minRange = ranges.map(\.duration).min() ?? 0
+        return max(0, min(crossfadeDuration, minRange / 2.0))
     }
 
     // MARK: - Convenience accessors (single-range compat)
@@ -52,9 +66,13 @@ struct TrimSettings: Codable, Equatable {
         }
     }
 
-    /// Sum of all range durations. This is the duration of the concatenated export.
+    /// Sum of all range durations minus crossfade overlaps. This is the duration of the
+    /// concatenated export. With N ranges and crossfade D, output = sum(durations) - (N-1)*D.
     var duration: Double {
-        ranges.reduce(0.0) { $0 + $1.duration }
+        let raw = ranges.reduce(0.0) { $0 + $1.duration }
+        let xfade = effectiveCrossfade
+        guard xfade > 0 else { return raw }
+        return max(0, raw - Double(ranges.count - 1) * xfade)
     }
 
     /// Sorted copy of the ranges (defensive: editing should keep them sorted, but this guarantees it).
@@ -109,6 +127,7 @@ struct TrimSettings: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case ranges
+        case crossfadeDuration
         // Legacy single-range keys
         case startTime, endTime
     }
@@ -123,10 +142,14 @@ struct TrimSettings: Codable, Equatable {
         } else {
             ranges = []
         }
+        crossfadeDuration = try c.decodeIfPresent(Double.self, forKey: .crossfadeDuration) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(ranges, forKey: .ranges)
+        if crossfadeDuration > 0 {
+            try c.encode(crossfadeDuration, forKey: .crossfadeDuration)
+        }
     }
 }

@@ -22,14 +22,17 @@ enum TrimTimingUtility {
     /// - A block straddling multiple ranges produces multiple output blocks (one per overlap),
     ///   sharing the same UUID — they render the same image, just at different output times.
     /// - All times are remapped to export-relative coordinates (the concatenated output).
+    /// - When the trim has a crossfade, each consecutive range is overlapped by the crossfade
+    ///   duration so block timings shift earlier accordingly.
     static func blocksForExport(
         _ blocks: [LyricBlock],
         trim: TrimSettings
     ) -> [LyricBlock] {
         var output: [LyricBlock] = []
         var cumulativeOffset = 0.0
-        for range in trim.sortedRanges {
-            let rangeDuration = range.duration
+        let xfade = trim.effectiveCrossfade
+        for (i, range) in trim.sortedRanges.enumerated() {
+            let rangeStartInOutput = cumulativeOffset - Double(i) * xfade
             for block in blocks {
                 guard let bs = block.startTime, let be = block.endTime else { continue }
                 let overlapStart = max(bs, range.startTime)
@@ -37,11 +40,11 @@ enum TrimTimingUtility {
                 guard overlapEnd > overlapStart else { continue }
 
                 var clamped = block
-                clamped.startTime = cumulativeOffset + (overlapStart - range.startTime)
-                clamped.endTime = cumulativeOffset + (overlapEnd - range.startTime)
+                clamped.startTime = rangeStartInOutput + (overlapStart - range.startTime)
+                clamped.endTime = rangeStartInOutput + (overlapEnd - range.startTime)
                 output.append(clamped)
             }
-            cumulativeOffset += rangeDuration
+            cumulativeOffset += range.duration
         }
         return output
     }

@@ -87,7 +87,8 @@ class ExportService {
                 outputURL: croppedURL
             )
         } else {
-            // Multi-range: encode each segment separately, then concat (no re-encode).
+            // Multi-range: encode each segment separately, then either concat (no re-encode)
+            // or chain xfade/acrossfade transitions when a crossfade duration is set.
             var segmentURLs: [URL] = []
             for (i, range) in sortedRanges.enumerated() {
                 let segURL = URL(fileURLWithPath: "\(tempDir)/seg_\(i).mp4")
@@ -104,27 +105,38 @@ class ExportService {
                 segmentURLs.append(segURL)
             }
 
-            // concat demuxer needs a list file with absolute paths
-            let listURL = URL(fileURLWithPath: "\(tempDir)/concat_list.txt")
-            let listBody = segmentURLs.map { "file '\($0.path)'" }.joined(separator: "\n")
-            try listBody.write(to: listURL, atomically: true, encoding: .utf8)
-
-            let concatArgs: [String] = [
-                "-f", "concat", "-safe", "0",
-                "-i", listURL.path,
-                "-c", "copy",
-                "-movflags", "+faststart",
-                "-y", croppedURL.path
-            ]
             onProgress(.exporting(progress: 0.36))
-            let concatResult = try await ProcessRunner.run(ffmpeg, arguments: concatArgs)
-            guard concatResult.succeeded else {
-                throw ExportError.exportFailed(concatResult.stderr)
+            let xfade = trim.effectiveCrossfade
+            if xfade > 0 {
+                try await runXfadeChain(
+                    ffmpeg: ffmpeg,
+                    segmentURLs: segmentURLs,
+                    durations: sortedRanges.map { $0.duration },
+                    crossfade: xfade,
+                    outputURL: croppedURL
+                )
+            } else {
+                // concat demuxer needs a list file with absolute paths
+                let listURL = URL(fileURLWithPath: "\(tempDir)/concat_list.txt")
+                let listBody = segmentURLs.map { "file '\($0.path)'" }.joined(separator: "\n")
+                try listBody.write(to: listURL, atomically: true, encoding: .utf8)
+
+                let concatArgs: [String] = [
+                    "-f", "concat", "-safe", "0",
+                    "-i", listURL.path,
+                    "-c", "copy",
+                    "-movflags", "+faststart",
+                    "-y", croppedURL.path
+                ]
+                let concatResult = try await ProcessRunner.run(ffmpeg, arguments: concatArgs)
+                guard concatResult.succeeded else {
+                    throw ExportError.exportFailed(concatResult.stderr)
+                }
+                try? FileManager.default.removeItem(at: listURL)
             }
 
             // Cleanup segment temp files
             for url in segmentURLs { try? FileManager.default.removeItem(at: url) }
-            try? FileManager.default.removeItem(at: listURL)
         }
 
         onProgress(.exporting(progress: 0.4))
@@ -461,6 +473,57 @@ class ExportService {
             [fg]scale=\(fgW):\(fgH)[fgfit];\
             [bgblur][fgfit]overlay=\(overlayX):\(overlayY)
             """
+        }
+    }
+
+    /// Chain xfade (video) + acrossfade (audio) across N pre-encoded segments.
+    /// Each crossfade overlaps the previous segment's last `crossfade` seconds with the
+    /// next segment's first `crossfade` seconds. Output duration is sum(durations) - (N-1)*crossfade.
+    private func runXfadeChain(
+        ffmpeg: String,
+        segmentURLs: [URL],
+        durations: [Double],
+        crossfade: Double,
+        outputURL: URL
+    ) async throws {
+        precondition(segmentURLs.count >= 2 && segmentURLs.count == durations.count)
+        var args: [String] = []
+        for url in segmentURLs {
+            args += ["-i", url.path]
+        }
+
+        let durStr = String(format: "%.3f", crossfade)
+        var filters: [String] = []
+        var vLabel = "0:v"
+        var aLabel = "0:a"
+        var priorDuration = durations[0]  // duration of current chained output before next xfade
+        let lastIndex = segmentURLs.count - 1
+        for i in 1...lastIndex {
+            let nextV = (i == lastIndex) ? "v" : "v\(i)"
+            let nextA = (i == lastIndex) ? "a" : "a\(i)"
+            let offset = priorDuration - crossfade
+            let offsetStr = String(format: "%.3f", max(0, offset))
+            filters.append("[\(vLabel)][\(i):v]xfade=transition=fade:duration=\(durStr):offset=\(offsetStr)[\(nextV)]")
+            filters.append("[\(aLabel)][\(i):a]acrossfade=d=\(durStr)[\(nextA)]")
+            vLabel = nextV
+            aLabel = nextA
+            priorDuration = priorDuration + durations[i] - crossfade
+        }
+
+        args += ["-filter_complex", filters.joined(separator: ";")]
+        args += ["-map", "[v]", "-map", "[a]"]
+        args += [
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k",
+            "-r", "30",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            "-y", outputURL.path
+        ]
+
+        let result = try await ProcessRunner.run(ffmpeg, arguments: args)
+        guard result.succeeded else {
+            throw ExportError.exportFailed(result.stderr)
         }
     }
 

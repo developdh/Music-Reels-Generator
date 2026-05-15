@@ -4,6 +4,12 @@ import AppKit
 struct TrimInspectorView: View {
     @EnvironmentObject var vm: ProjectViewModel
 
+    private var crossfadeLabelText: String {
+        let d = vm.project.trimSettings.crossfadeDuration
+        if d <= 0 { return L10n.Trim.crossfadeOff(vm.lang) }
+        return L10n.Trim.crossfadeLabel(vm.lang, seconds: d)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -32,6 +38,37 @@ struct TrimInspectorView: View {
             } else {
                 ForEach(Array(vm.project.trimSettings.sortedRanges.enumerated()), id: \.element.id) { index, range in
                     TrimRangeBox(index: index + 1, range: range)
+                }
+
+                // Crossfade between ranges (only relevant with 2+ ranges)
+                if vm.project.trimSettings.ranges.count >= 2 {
+                    GroupBox(L10n.Trim.crossfade(vm.lang)) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(crossfadeLabelText)
+                                    .font(.caption)
+                                    .monospacedDigit()
+                                Spacer()
+                                if vm.project.trimSettings.crossfadeDuration > 0 {
+                                    Button(L10n.Trim.crossfadeOff(vm.lang)) {
+                                        vm.setCrossfadeDuration(0)
+                                    }
+                                    .controlSize(.mini)
+                                }
+                            }
+                            Slider(
+                                value: Binding(
+                                    get: { vm.project.trimSettings.crossfadeDuration },
+                                    set: { vm.setCrossfadeDuration($0) }
+                                ),
+                                in: 0...2.0,
+                                step: 0.05
+                            )
+                            Text(L10n.Trim.crossfadeHelp(vm.lang))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
 
                 // Summary

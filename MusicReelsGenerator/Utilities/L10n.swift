@@ -648,6 +648,27 @@ enum L10n {
             case .ja: "現在位置に新しい区間を追加する余地がありません。"
             }
         }
+        static func crossfade(_ l: UILanguage) -> String {
+            switch l { case .ko: "크로스페이드"; case .en: "Crossfade"; case .ja: "クロスフェード" }
+        }
+        static func crossfadeLabel(_ l: UILanguage, seconds: Double) -> String {
+            let s = String(format: "%.2fs", seconds)
+            switch l {
+            case .ko: return "크로스페이드: \(s)"
+            case .en: return "Crossfade: \(s)"
+            case .ja: return "クロスフェード: \(s)"
+            }
+        }
+        static func crossfadeHelp(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "구간 사이에 영상/오디오 페이드 전환을 추가합니다 (내보내기 전용)."
+            case .en: "Adds a fade transition between ranges in the exported video (export only)."
+            case .ja: "区間の間に映像/音声フェード遷移を追加します（書き出し時のみ）。"
+            }
+        }
+        static func crossfadeOff(_ l: UILanguage) -> String {
+            switch l { case .ko: "끔"; case .en: "Off"; case .ja: "オフ" }
+        }
     }
 
     // MARK: - Overlay Inspector
