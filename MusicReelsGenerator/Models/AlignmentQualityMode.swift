@@ -42,7 +42,7 @@ enum AlignmentQualityMode: String, Codable, CaseIterable, Identifiable {
 
     var beamWidth: Int { 80 }
     var matchThreshold: Double { 0.25 }
-    var maxCombineSegments: Int { 3 }
+    var maxCombineSegments: Int { 5 }
     var searchWindowSeconds: Double { 30 }
     var refinementPasses: Int { 2 }
     var positionWeight: Double { 0.35 }

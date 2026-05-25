@@ -20,10 +20,18 @@ extension WhisperAlignmentService {
             // Merge if current segment is very short and next is close, and both are same type
             if currentDuration < minDuration && (next.startTime - current.endTime) < 0.5
                 && currentIsNonSpeech == nextIsNonSpeech {
+                let mergedConfidence: Double?
+                switch (current.confidence, next.confidence) {
+                case let (a?, b?): mergedConfidence = (a + b) / 2.0
+                case let (a?, nil): mergedConfidence = a
+                case let (nil, b?): mergedConfidence = b
+                case (nil, nil):    mergedConfidence = nil
+                }
                 current = WhisperSegment(
                     startTime: current.startTime,
                     endTime: next.endTime,
-                    text: current.text + next.text
+                    text: current.text + next.text,
+                    confidence: mergedConfidence
                 )
             } else {
                 merged.append(current)

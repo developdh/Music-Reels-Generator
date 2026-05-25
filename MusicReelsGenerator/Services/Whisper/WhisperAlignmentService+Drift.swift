@@ -17,14 +17,16 @@ extension WhisperAlignmentService {
         segments: [WhisperSegment],
         totalDuration: Double,
         vocalOnset: Double,
-        mode: AlignmentQualityMode
+        mode: AlignmentQualityMode,
+        repetitionCounts: [Int]
     ) -> (driftDetected: Bool, correctedCount: Int) {
         let result = detectAndCorrectDriftImpl(
             blocks: &blocks,
             segments: segments,
             totalDuration: totalDuration,
             vocalOnset: vocalOnset,
-            mode: mode
+            mode: mode,
+            repetitionCounts: repetitionCounts
         )
         return (result.driftDetected, result.correctedCount)
     }
@@ -34,7 +36,8 @@ extension WhisperAlignmentService {
         segments: [WhisperSegment],
         totalDuration: Double,
         vocalOnset: Double,
-        mode: AlignmentQualityMode
+        mode: AlignmentQualityMode,
+        repetitionCounts: [Int]
     ) -> DriftResult {
         let B = blocks.count
         guard B >= 4 else { return DriftResult(driftDetected: false, correctedCount: 0) }
@@ -93,6 +96,7 @@ extension WhisperAlignmentService {
                 if !regionSegments.isEmpty {
                     let regionBlocks = Array(blocks[i..<regionEnd])
                     let regionDuration = timeAfter - timeBefore
+                    let regionRepetitions = Array(repetitionCounts[i..<regionEnd])
 
                     let localAligned = alignRegion(
                         segments: regionSegments,
@@ -100,7 +104,8 @@ extension WhisperAlignmentService {
                         regionStart: timeBefore,
                         regionEnd: timeAfter,
                         regionDuration: regionDuration,
-                        mode: mode
+                        mode: mode,
+                        repetitionCounts: regionRepetitions
                     )
 
                     // Apply only if improvement

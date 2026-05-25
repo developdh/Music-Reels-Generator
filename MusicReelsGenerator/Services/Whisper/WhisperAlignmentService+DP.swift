@@ -18,6 +18,34 @@ extension WhisperAlignmentService {
         var endTime: Double
     }
 
+    /// Map repetition count to position weight. Unique lines trust text;
+    /// repeated lines (chorus) trust position to prevent matching the wrong instance.
+    static func adaptivePositionWeight(repetitionCount: Int) -> Double {
+        switch repetitionCount {
+        case ...1: return 0.15
+        case 2:    return 0.30
+        case 3:    return 0.45
+        default:   return 0.55
+        }
+    }
+
+    /// Map whisper's per-segment confidence to a multiplier in [0.5, 1.0].
+    /// Hallucinated transcripts in instrumental gaps tend to have very low
+    /// token probabilities — halving their score keeps them out of the beam.
+    /// Returns 1.0 when no segment in the span has confidence info.
+    static func spanConfidenceFactor(segments: [WhisperSegment], si: Int, endSeg: Int) -> Double {
+        var sum = 0.0
+        var count = 0
+        for i in si...endSeg {
+            if let c = segments[i].confidence {
+                sum += c
+                count += 1
+            }
+        }
+        guard count > 0 else { return 1.0 }
+        return 0.5 + 0.5 * (sum / Double(count))
+    }
+
     /// Core position-aware DP alignment
     static func positionAwareDP(
         segments: [WhisperSegment],
@@ -25,6 +53,7 @@ extension WhisperAlignmentService {
         totalDuration: Double,
         vocalOnset: Double,
         mode: AlignmentQualityMode,
+        repetitionCounts: [Int],
         onProgress: ((String) -> Void)?
     ) -> [LyricBlock] {
         let B = blocks.count
@@ -35,6 +64,8 @@ extension WhisperAlignmentService {
 
         for bi in 0..<B {
             if blocks[bi].isManuallyAdjusted { continue }
+            // Skip pre-anchored blocks from a prior phase — their match is fixed.
+            if blocks[bi].isAnchor, blocks[bi].startTime != nil { continue }
 
             let blockText = blocks[bi].japanese
             let expectedTime = estimateExpectedTime(
@@ -42,7 +73,29 @@ extension WhisperAlignmentService {
                 vocalOnset: vocalOnset,
                 existingBlocks: blocks
             )
+            let blockPositionWeight = adaptivePositionWeight(
+                repetitionCount: repetitionCounts.indices.contains(bi) ? repetitionCounts[bi] : 1
+            )
 
+            // Hard time bounds from the nearest pre-anchored neighbors on each side.
+            // Without these, candidates can land past a future anchor's segment,
+            // producing non-monotonic output that the apply step preserves.
+            var leftBound: Double = -1
+            var rightBound: Double = .infinity
+            for bj in stride(from: bi - 1, through: 0, by: -1) {
+                if (blocks[bj].isAnchor || blocks[bj].isManuallyAdjusted),
+                   let end = blocks[bj].endTime {
+                    leftBound = end
+                    break
+                }
+            }
+            for bk in (bi + 1)..<B {
+                if (blocks[bk].isAnchor || blocks[bk].isManuallyAdjusted),
+                   let start = blocks[bk].startTime {
+                    rightBound = start
+                    break
+                }
+            }
             // Windowed search: only check segments near the expected position
             let windowStart = max(0, expectedTime - mode.searchWindowSeconds)
             let windowEnd = min(totalDuration, expectedTime + mode.searchWindowSeconds)
@@ -53,12 +106,17 @@ extension WhisperAlignmentService {
                 // Skip segments outside the search window
                 if segTime < windowStart - 5 || segTime > windowEnd + 5 { continue }
 
+                // Hard anchor bounds — strictly enforce neighboring anchors' times.
+                if segments[si].endTime <= leftBound { continue }
+                if segTime >= rightBound { break }
+
                 // Skip non-speech segments as starting point for matching
                 if isNonSpeechSegment(segments[si]) { continue }
 
                 for span in 1...mode.maxCombineSegments {
                     let endSeg = si + span - 1
                     guard endSeg < S else { break }
+                    if segments[endSeg].endTime > rightBound { break }
 
                     // Don't combine across non-speech segments (instrumentals)
                     if span > 1 && isNonSpeechSegment(segments[endSeg]) { break }
@@ -75,7 +133,8 @@ extension WhisperAlignmentService {
                             windowRadius: mode.searchWindowSeconds
                         )
 
-                        let combined = textScore * (1.0 - mode.positionWeight) + posScore * mode.positionWeight
+                        let base = textScore * (1.0 - blockPositionWeight) + posScore * blockPositionWeight
+                        let combined = base * spanConfidenceFactor(segments: segments, si: si, endSeg: endSeg)
 
                         candidates[bi].append(SegmentMatch(
                             segStart: si,
@@ -114,6 +173,31 @@ extension WhisperAlignmentService {
             }
 
             var nextBeam: [DPState] = []
+
+            // Pre-anchored block: force the anchor's segment range, advance lastSegEnd.
+            // No alternative choices — the anchor is fixed.
+            if blocks[bi].isAnchor,
+               let bStart = blocks[bi].startTime,
+               let bEnd = blocks[bi].endTime,
+               let segRange = anchorSegmentRange(blockStart: bStart, blockEnd: bEnd, in: segments) {
+                for state in beam {
+                    if segRange.start <= state.lastSegEnd {
+                        // Anchor conflicts with monotonic order — treat as skip
+                        var s = state
+                        s.choices.append(nil)
+                        nextBeam.append(s)
+                    } else {
+                        var s = state
+                        s.choices.append(nil)
+                        s.lastSegEnd = segRange.end
+                        s.lastMatchTime = bEnd
+                        nextBeam.append(s)
+                    }
+                }
+                nextBeam.sort { $0.totalScore > $1.totalScore }
+                beam = Array(nextBeam.prefix(mode.beamWidth))
+                continue
+            }
 
             for state in beam {
                 // Option 1: Skip this block
@@ -164,6 +248,10 @@ extension WhisperAlignmentService {
                 alignedBlocks[bi].isAnchor = true
                 continue
             }
+            // Preserve pre-anchored blocks from phase 0
+            if alignedBlocks[bi].isAnchor, alignedBlocks[bi].startTime != nil {
+                continue
+            }
 
             if let ci = best.choices[bi], let cand = candidates[bi][safe: ci] {
                 alignedBlocks[bi].startTime = cand.startTime
@@ -188,6 +276,7 @@ extension WhisperAlignmentService {
         totalDuration: Double,
         vocalOnset: Double,
         mode: AlignmentQualityMode,
+        repetitionCounts: [Int],
         passNumber: Int
     ) -> [LyricBlock] {
         var refined = blocks
@@ -245,6 +334,7 @@ extension WhisperAlignmentService {
                 // Re-align just this region with tighter constraints
                 let regionBlocks = Array(refined[i..<regionEnd])
                 let regionDuration = timeAfter - timeBefore
+                let regionRepetitions = Array(repetitionCounts[i..<regionEnd])
 
                 let localAligned = alignRegion(
                     segments: regionSegments,
@@ -252,7 +342,8 @@ extension WhisperAlignmentService {
                     regionStart: timeBefore,
                     regionEnd: timeAfter,
                     regionDuration: regionDuration,
-                    mode: mode
+                    mode: mode,
+                    repetitionCounts: regionRepetitions
                 )
 
                 // Apply local results
@@ -270,14 +361,17 @@ extension WhisperAlignmentService {
         return refined
     }
 
-    /// Align a small region of blocks to nearby segments
+    /// Align a small region of blocks to nearby segments.
+    /// `repetitionCounts` should be the slice aligned to `blocks`; if nil, falls
+    /// back to a fixed 0.35 position weight.
     static func alignRegion(
         segments: [WhisperSegment],
         blocks: [LyricBlock],
         regionStart: Double,
         regionEnd: Double,
         regionDuration: Double,
-        mode: AlignmentQualityMode
+        mode: AlignmentQualityMode,
+        repetitionCounts: [Int]? = nil
     ) -> [LyricBlock] {
         let B = blocks.count
         let S = segments.count
@@ -293,6 +387,10 @@ extension WhisperAlignmentService {
 
             let blockText = blocks[bi].japanese
             let expectedTime = regionStart + (Double(bi) + 0.5) / Double(B) * regionDuration
+            let blockPositionWeight: Double = {
+                guard let counts = repetitionCounts, counts.indices.contains(bi) else { return 0.35 }
+                return adaptivePositionWeight(repetitionCount: counts[bi])
+            }()
 
             for si in 0..<S {
                 // Skip non-speech segments as starting point
@@ -313,7 +411,8 @@ extension WhisperAlignmentService {
                             windowRadius: regionDuration / 2
                         )
 
-                        let combined = textScore * 0.65 + posScore * 0.35
+                        let base = textScore * (1.0 - blockPositionWeight) + posScore * blockPositionWeight
+                        let combined = base * spanConfidenceFactor(segments: segments, si: si, endSeg: endSeg)
 
                         candidates[bi].append(SegmentMatch(
                             segStart: si, segEnd: endSeg,
@@ -439,6 +538,20 @@ extension WhisperAlignmentService {
         // NOT from 0:00. This prevents intro regions from attracting lyrics.
         let lyricDuration = totalDuration - vocalOnset
         return vocalOnset + (Double(blockIndex) + 0.5) / Double(totalBlocks) * lyricDuration
+    }
+
+    /// Find the segment index range whose start/end times match an anchored
+    /// block. Anchors come from a prior phase that set times directly from
+    /// segment timestamps, so an exact (within 0.1s) match is expected.
+    fileprivate static func anchorSegmentRange(
+        blockStart: Double,
+        blockEnd: Double,
+        in segments: [WhisperSegment]
+    ) -> (start: Int, end: Int)? {
+        let startIdx = segments.firstIndex { abs($0.startTime - blockStart) < 0.1 }
+        let endIdx = segments.lastIndex { abs($0.endTime - blockEnd) < 0.1 }
+        guard let s = startIdx, let e = endIdx, s <= e else { return nil }
+        return (s, e)
     }
 
     /// Score how plausible a candidate's position is relative to expected position.

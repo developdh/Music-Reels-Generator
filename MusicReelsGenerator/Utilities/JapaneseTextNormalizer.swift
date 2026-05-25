@@ -1,8 +1,29 @@
 import Foundation
 
 enum JapaneseTextNormalizer {
+    // MARK: - Memoization
+    private static let cacheLock = NSLock()
+    private static var normalizeCache: [String: String] = [:]
+    private static var romajiCache: [String: String] = [:]
+
+    /// Clear memoization caches. Bounded growth is fine within one alignment
+    /// (a few thousand unique strings); call this between projects if memory matters.
+    static func clearCaches() {
+        cacheLock.lock()
+        normalizeCache.removeAll(keepingCapacity: false)
+        romajiCache.removeAll(keepingCapacity: false)
+        cacheLock.unlock()
+    }
+
     /// Normalize Japanese text for fuzzy matching
     static func normalize(_ text: String) -> String {
+        cacheLock.lock()
+        if let cached = normalizeCache[text] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
         var result = text
 
         // Remove common punctuation and whitespace
@@ -41,7 +62,69 @@ enum JapaneseTextNormalizer {
             result = result.replacingOccurrences(of: String(fw), with: String(hw))
         }
 
-        return result.lowercased()
+        let final = result.lowercased()
+        cacheLock.lock()
+        normalizeCache[text] = final
+        cacheLock.unlock()
+        return final
+    }
+
+    /// Phonetic (romaji) form via CFStringTokenizer's Japanese morpheme reader.
+    /// Whisper transcribes by sound, but lyrics often use kanji — without a
+    /// phonetic bridge, kanji-heavy lines fail to match whisper's kana output.
+    /// Macrons (ā/ī/ū/ē/ō) and n-boundary apostrophes are stripped so prolonged
+    /// vowels and 案件/兄 ambiguity don't penalize matches.
+    static func toRomaji(_ text: String) -> String {
+        cacheLock.lock()
+        if let cached = romajiCache[text] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        let cleaned = normalize(text)
+        guard !cleaned.isEmpty else {
+            cacheLock.lock()
+            romajiCache[text] = ""
+            cacheLock.unlock()
+            return ""
+        }
+
+        let cfText = cleaned as CFString
+        let length = CFStringGetLength(cfText)
+        let locale = Locale(identifier: "ja") as CFLocale
+        let tokenizer = CFStringTokenizerCreate(
+            nil, cfText, CFRangeMake(0, length),
+            kCFStringTokenizerUnitWord,
+            locale
+        )
+
+        var built = ""
+        while CFStringTokenizerAdvanceToNextToken(tokenizer) != [] {
+            if let romaji = CFStringTokenizerCopyCurrentTokenAttribute(
+                tokenizer, kCFStringTokenizerAttributeLatinTranscription
+            ) as? String {
+                built += romaji
+            } else {
+                let tokenRange = CFStringTokenizerGetCurrentTokenRange(tokenizer)
+                let ns = cleaned as NSString
+                if tokenRange.location >= 0,
+                   tokenRange.location + tokenRange.length <= ns.length {
+                    built += ns.substring(with: NSRange(location: tokenRange.location, length: tokenRange.length))
+                }
+            }
+        }
+
+        var stripped = built.folding(options: .diacriticInsensitive, locale: Locale(identifier: "en"))
+        stripped = stripped.replacingOccurrences(of: "'", with: "")
+        stripped = stripped.replacingOccurrences(of: "\u{02BC}", with: "")
+        stripped = stripped.replacingOccurrences(of: " ", with: "")
+        stripped = stripped.lowercased()
+
+        cacheLock.lock()
+        romajiCache[text] = stripped
+        cacheLock.unlock()
+        return stripped
     }
 
     /// Convert katakana characters to hiragana
@@ -76,7 +159,20 @@ enum JapaneseTextNormalizer {
         // transcribes a superset/subset of the lyric line
         let containmentSim = containmentScore(na, nb)
 
-        return max(levenshteinSim, containmentSim)
+        // Phonetic bridge for kanji ↔ kana mismatches (whisper outputs by sound;
+        // lyrics often use kanji). Compute Levenshtein on romaji forms.
+        let ra = toRomaji(a)
+        let rb = toRomaji(b)
+        let romajiSim: Double
+        if ra.isEmpty || rb.isEmpty {
+            romajiSim = 0
+        } else {
+            let rdist = levenshteinDistance(ra, rb)
+            let rmax = max(ra.count, rb.count)
+            romajiSim = 1.0 - Double(rdist) / Double(rmax)
+        }
+
+        return max(levenshteinSim, containmentSim, romajiSim)
     }
 
     /// Score based on how much of the shorter string is contained in the longer
@@ -92,7 +188,12 @@ enum JapaneseTextNormalizer {
         let longerCoverage = Double(lcsLen) / Double(longer.count)
 
         // Weight toward shorter string coverage (lyric line fully matched)
-        return shorterCoverage * 0.7 + longerCoverage * 0.3
+        let raw = shorterCoverage * 0.7 + longerCoverage * 0.3
+
+        // A 1-3 char "match" inside a long string is mostly chance — discount it.
+        // Any short lyric block worth matching will score via Levenshtein/romaji.
+        let lengthFactor = min(1.0, Double(shorter.count) / 4.0)
+        return raw * lengthFactor
     }
 
     /// Longest common subsequence length

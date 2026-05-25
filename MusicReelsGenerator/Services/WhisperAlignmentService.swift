@@ -24,6 +24,16 @@ struct WhisperSegment {
     let startTime: Double
     let endTime: Double
     let text: String
+    /// Average non-special token probability from whisper. nil when parsed from
+    /// a source that doesn't expose token confidence (stdout regex fallback, etc.)
+    let confidence: Double?
+
+    init(startTime: Double, endTime: Double, text: String, confidence: Double? = nil) {
+        self.startTime = startTime
+        self.endTime = endTime
+        self.text = text
+        self.confidence = confidence
+    }
 }
 
 enum WhisperAlignmentService {
@@ -75,13 +85,14 @@ enum WhisperAlignmentService {
         let modelName = URL(fileURLWithPath: model).lastPathComponent
         onProgress?("Running speech recognition (\(modelName))...")
 
-        // Output CSV format for easy parsing
+        // Use full JSON output: includes per-token probabilities so we can
+        // derive per-segment confidence and down-weight hallucinated transcripts.
         let outputBase = NSTemporaryDirectory() + "whisper_output"
 
         var args = [
             "-m", model,
             "-f", audioURL.path,
-            "--output-csv",
+            "--output-json-full",
             "--output-file", outputBase,
             "--no-prints"
         ]
@@ -91,14 +102,14 @@ enum WhisperAlignmentService {
 
         let result = try await ProcessRunner.run(whisper, arguments: args)
 
-        // Try parsing CSV file first, fall back to stdout
-        let csvPath = outputBase + ".csv"
+        // Try parsing JSON file first (with confidence), fall back to stdout regex.
+        let jsonPath = outputBase + ".json"
         var segments: [WhisperSegment] = []
 
-        if FileManager.default.fileExists(atPath: csvPath),
-           let csvContent = try? String(contentsOfFile: csvPath, encoding: .utf8) {
-            segments = parseCSV(csvContent)
-            try? FileManager.default.removeItem(atPath: csvPath)
+        if FileManager.default.fileExists(atPath: jsonPath),
+           let data = try? Data(contentsOf: URL(fileURLWithPath: jsonPath)) {
+            segments = parseJSON(data)
+            try? FileManager.default.removeItem(atPath: jsonPath)
         }
 
         if segments.isEmpty {
@@ -137,6 +148,101 @@ enum WhisperAlignmentService {
         }
     }
 
+    /// Per-block text repetition counts (normalized exact match). Used to choose
+    /// adaptive position-vs-text weighting: unique lines trust text, chorus
+    /// lines trust position to prevent drift between repeated instances.
+    static func repetitionCounts(_ blocks: [LyricBlock]) -> [Int] {
+        let normalized = blocks.map { JapaneseTextNormalizer.normalize($0.japanese) }
+        var counts: [String: Int] = [:]
+        for t in normalized { counts[t, default: 0] += 1 }
+        return normalized.map { counts[$0] ?? 1 }
+    }
+
+    /// Pre-anchor unique (non-repeated) lyric blocks via greedy monotonic
+    /// text-best match. Choruses are ambiguous but verses/bridges aren't —
+    /// anchoring uniques first gives the subsequent DP reliable time references,
+    /// so chorus blocks land on the correct repetition instance.
+    /// Requires high text score and minimum length to avoid false anchors.
+    static func greedyAnchorUniqueBlocks(
+        segments: [WhisperSegment],
+        blocks: [LyricBlock],
+        repetitions: [Int],
+        mode: AlignmentQualityMode,
+        minTextLength: Int = 6,
+        minTextScore: Double = 0.6
+    ) -> [LyricBlock] {
+        let B = blocks.count
+        let S = segments.count
+        var result = blocks
+        var minSegStart = 0
+        var anchorCount = 0
+
+        // Position prior so unique blocks prefer the earlier audio instance when
+        // a phrase recurs (whisper often re-transcribes pre-chorus/bridge lines
+        // similarly across repetitions; without this prior, the greedy picks the
+        // later one if its text score is marginally higher).
+        let lyricSpan = max(0.1, (segments.last?.endTime ?? 0) - (segments.first?.startTime ?? 0))
+        let vocalStart = segments.first?.startTime ?? 0
+        let posSigma: Double = 30.0
+
+        for bi in 0..<B {
+            // Respect manual overrides and advance the monotonic floor past them
+            if result[bi].isManuallyAdjusted, let endT = result[bi].endTime {
+                if let adv = segments.firstIndex(where: { $0.startTime >= endT }) {
+                    minSegStart = max(minSegStart, adv)
+                }
+                continue
+            }
+
+            guard bi < repetitions.count, repetitions[bi] == 1 else { continue }
+
+            let blockText = blocks[bi].japanese
+            let normalizedLength = JapaneseTextNormalizer.normalize(blockText).count
+            guard normalizedLength >= minTextLength else { continue }
+
+            let expectedTime = vocalStart + (Double(bi) + 0.5) / Double(B) * lyricSpan
+
+            var best: (segStart: Int, segEnd: Int, score: Double)? = nil
+            for si in minSegStart..<S {
+                if isNonSpeechSegment(segments[si]) { continue }
+                let maxSpan = min(mode.maxCombineSegments, S - si)
+                for span in 1...maxSpan {
+                    let endSeg = si + span - 1
+                    if span > 1 && isNonSpeechSegment(segments[endSeg]) { break }
+                    let combinedText = (si...endSeg).map { segments[$0].text }.joined()
+                    let textScore = JapaneseTextNormalizer.similarity(blockText, combinedText)
+                    if textScore < minTextScore { continue }
+
+                    let segMid = (segments[si].startTime + segments[endSeg].endTime) / 2.0
+                    let dist = abs(segMid - expectedTime)
+                    let posScore = exp(-(dist * dist) / (2 * posSigma * posSigma))
+
+                    let conf = spanConfidenceFactor(segments: segments, si: si, endSeg: endSeg)
+                    let combined = textScore * 0.6 + posScore * 0.4
+                    let scored = combined * conf
+
+                    if best == nil || scored > best!.score {
+                        best = (si, endSeg, scored)
+                    }
+                }
+            }
+
+            if let b = best {
+                result[bi].startTime = segments[b.segStart].startTime
+                result[bi].endTime = segments[b.segEnd].endTime
+                result[bi].confidence = b.score
+                result[bi].isAnchor = true
+                minSegStart = b.segEnd + 1
+                anchorCount += 1
+            }
+        }
+
+        if anchorCount > 0 {
+            print("[Alignment] Pre-anchored \(anchorCount) unique blocks (greedy text-best)")
+        }
+        return result
+    }
+
     /// Align whisper segments to lyric blocks using multi-pass position-aware DP.
     ///
     /// Key improvements over simple beam search:
@@ -153,6 +259,13 @@ enum WhisperAlignmentService {
     ) -> [LyricBlock] {
         guard !segments.isEmpty, !blocks.isEmpty else { return blocks }
 
+        // Reset auto-set anchors from prior runs so the new alignment can place
+        // them freshly. User anchors and manual overrides are preserved.
+        var blocks = blocks
+        for i in blocks.indices where !blocks[i].isUserAnchor && !blocks[i].isManuallyAdjusted {
+            blocks[i].isAnchor = false
+        }
+
         // Filter out segments in ignore regions
         let segments = filterIgnoredSegments(segments, ignoreRegions: ignoreRegions)
         if segments.isEmpty { return blocks }
@@ -167,13 +280,28 @@ enum WhisperAlignmentService {
         onProgress?("Aligning \(S) segments to \(B) lyric blocks (\(mode.rawValue) mode)...")
         print("[Alignment] Detected vocal onset: \(String(format: "%.2f", vocalOnset))s (first segment: \(String(format: "%.2f", segments.first?.startTime ?? 0))s)")
 
+        // Per-block repetition counts — stable across passes since block text doesn't change.
+        let repetitions = repetitionCounts(blocks)
+
+        // === Phase 0: Pre-anchor unique blocks (verses, bridges) ===
+        // Chorus blocks repeat and are ambiguous; verses don't. Anchoring uniques
+        // first gives the DP reliable time references so chorus instances land
+        // on the correct repetition — preventing the chorus domino cascade.
+        let preAnchored = greedyAnchorUniqueBlocks(
+            segments: segments,
+            blocks: blocks,
+            repetitions: repetitions,
+            mode: mode
+        )
+
         // === Pass 1: Position-aware DP alignment ===
         var alignedBlocks = positionAwareDP(
             segments: segments,
-            blocks: blocks,
+            blocks: preAnchored,
             totalDuration: totalDuration,
             vocalOnset: vocalOnset,
             mode: mode,
+            repetitionCounts: repetitions,
             onProgress: onProgress
         )
 
@@ -186,6 +314,7 @@ enum WhisperAlignmentService {
                 totalDuration: totalDuration,
                 vocalOnset: vocalOnset,
                 mode: mode,
+                repetitionCounts: repetitions,
                 passNumber: pass
             )
         }
@@ -196,7 +325,8 @@ enum WhisperAlignmentService {
             segments: segments,
             totalDuration: totalDuration,
             vocalOnset: vocalOnset,
-            mode: mode
+            mode: mode,
+            repetitionCounts: repetitions
         )
         if driftResult.driftDetected {
             onProgress?("Drift detected: corrected \(driftResult.correctedCount) blocks")
@@ -268,6 +398,7 @@ enum WhisperAlignmentService {
 
         let regionBlocks = Array(allBlocks[fromIndex...toIndex])
         let regionDuration = timeAfter - timeBefore
+        let regionRepetitions = Array(repetitionCounts(allBlocks)[fromIndex...toIndex])
 
         print("[LocalRealign] Re-aligning blocks \(fromIndex)–\(toIndex) in time range \(String(format: "%.1f", timeBefore))–\(String(format: "%.1f", timeAfter))s (\(regionSegments.count) segments)")
 
@@ -277,7 +408,8 @@ enum WhisperAlignmentService {
             regionStart: timeBefore,
             regionEnd: timeAfter,
             regionDuration: regionDuration,
-            mode: mode
+            mode: mode,
+            repetitionCounts: regionRepetitions
         )
 
         // Merge results back — only update non-anchored blocks
