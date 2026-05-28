@@ -219,7 +219,12 @@ enum WhisperAlignmentService {
 
                     let conf = spanConfidenceFactor(segments: segments, si: si, endSeg: endSeg)
                     let combined = textScore * 0.6 + posScore * 0.4
-                    let scored = combined * conf
+                    // Penalize long spans: a unique lyric line usually maps to a single
+                    // whisper segment. Without this, a longer span gets a higher position
+                    // score (midpoint drifts toward expectedTime) and wins despite lower
+                    // text fit, locking other blocks out of the right segments.
+                    let spanPenalty = pow(0.85, Double(span - 1))
+                    let scored = combined * conf * spanPenalty
 
                     if best == nil || scored > best!.score {
                         best = (si, endSeg, scored)

@@ -160,19 +160,58 @@ enum JapaneseTextNormalizer {
         let containmentSim = containmentScore(na, nb)
 
         // Phonetic bridge for kanji ↔ kana mismatches (whisper outputs by sound;
-        // lyrics often use kanji). Compute Levenshtein on romaji forms.
+        // lyrics often use kanji). Use Levenshtein on romaji, plus a fuzzy
+        // substring check that tolerates ~25% edits — needed because
+        // CFStringTokenizer picks one kanji reading (e.g. 私=watakushi) which
+        // may differ from the lyric's hiragana spelling (わたし=watashi).
         let ra = toRomaji(a)
         let rb = toRomaji(b)
-        let romajiSim: Double
-        if ra.isEmpty || rb.isEmpty {
-            romajiSim = 0
-        } else {
+        var romajiSim: Double = 0
+        if !ra.isEmpty, !rb.isEmpty {
             let rdist = levenshteinDistance(ra, rb)
             let rmax = max(ra.count, rb.count)
-            romajiSim = 1.0 - Double(rdist) / Double(rmax)
+            let rlev = 1.0 - Double(rdist) / Double(rmax)
+            let rshorter = ra.count <= rb.count ? ra : rb
+            let rlonger = ra.count <= rb.count ? rb : ra
+            var rsub = 0.0
+            let maxErrors = max(1, Int(Double(rshorter.count) * 0.25))
+            if fuzzyContains(needle: rshorter, in: rlonger, maxErrors: maxErrors) {
+                let coverage = Double(rshorter.count) / Double(rlonger.count)
+                let lengthFactor = min(1.0, Double(rshorter.count) / 4.0)
+                rsub = (0.7 + 0.3 * coverage) * lengthFactor
+            }
+            romajiSim = max(rlev, rsub)
         }
 
         return max(levenshteinSim, containmentSim, romajiSim)
+    }
+
+    /// Approximate substring match: returns true iff `needle` appears anywhere
+    /// in `haystack` with at most `maxErrors` edits. Uses the standard
+    /// Levenshtein variant where the start column is free (cost 0), so the
+    /// alignment can begin at any position in the haystack.
+    private static func fuzzyContains(needle: String, in haystack: String, maxErrors: Int) -> Bool {
+        let n = needle.count
+        let h = haystack.count
+        if n == 0 { return true }
+        if h == 0 { return false }
+        if n > h + maxErrors { return false }
+
+        let nArr = Array(needle)
+        let hArr = Array(haystack)
+
+        var prev = [Int](repeating: 0, count: h + 1)
+        var curr = [Int](repeating: 0, count: h + 1)
+
+        for i in 1...n {
+            curr[0] = i
+            for j in 1...h {
+                let cost = nArr[i - 1] == hArr[j - 1] ? 0 : 1
+                curr[j] = min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+            }
+            swap(&prev, &curr)
+        }
+        return (prev.min() ?? Int.max) <= maxErrors
     }
 
     /// Score based on how much of the shorter string is contained in the longer
