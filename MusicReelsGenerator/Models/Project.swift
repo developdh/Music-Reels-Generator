@@ -13,6 +13,7 @@ struct Project: Codable, Identifiable {
     var watermark: WatermarkSettings
     var ignoreRegions: [IgnoreRegion]
     var lyricBlocks: [LyricBlock]
+    var useVocalIsolation: Bool
     var createdAt: Date
     var updatedAt: Date
 
@@ -32,6 +33,7 @@ struct Project: Codable, Identifiable {
         self.watermark = WatermarkSettings()
         self.ignoreRegions = []
         self.lyricBlocks = []
+        self.useVocalIsolation = false
         self.createdAt = Date()
         self.updatedAt = Date()
     }
@@ -77,6 +79,8 @@ struct Project: Codable, Identifiable {
         ignoreRegions = try container.decodeIfPresent([IgnoreRegion].self, forKey: .ignoreRegions)
             ?? []
         lyricBlocks = try container.decode([LyricBlock].self, forKey: .lyricBlocks)
+        useVocalIsolation = try container.decodeIfPresent(Bool.self, forKey: .useVocalIsolation)
+            ?? false
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
