@@ -56,15 +56,17 @@ struct ToolbarView: View {
             .frame(width: 140)
             .help(alignmentPickerHelp)
 
-            // Vocal isolation toggle (demucs)
-            Toggle(isOn: $vm.project.useVocalIsolation) {
-                Label("Vocals only", systemImage: "music.mic")
+            // Whisper recognition model
+            Picker("", selection: $vm.project.whisperModel) {
+                ForEach(WhisperModel.allCases) { model in
+                    Text(L10n.Toolbar.whisperModel(vm.lang, model,
+                                                   installed: vm.installedWhisperModels.contains(model)))
+                        .tag(model)
+                }
             }
-            .toggleStyle(.button)
-            .controlSize(.small)
-            .disabled(!vm.vocalSeparationAvailable)
-            .help(vocalIsolationHelp)
-            .onChange(of: vm.project.useVocalIsolation) { _, _ in
+            .frame(width: 150)
+            .help(L10n.Toolbar.whisperModelHelp(vm.lang))
+            .onChange(of: vm.project.whisperModel) { _, _ in
                 vm.invalidateWhisperCache()
                 vm.project.touch()
                 vm.isDirty = true
@@ -99,7 +101,6 @@ struct ToolbarView: View {
             HStack(spacing: 8) {
                 ToolStatusBadge(name: "FFmpeg", available: vm.ffmpegAvailable)
                 ToolStatusBadge(name: "Whisper", available: vm.whisperAvailable)
-                ToolStatusBadge(name: "Demucs", available: vm.vocalSeparationAvailable)
                 ToolStatusBadge(name: "Python (Exp)", available: vm.advancedPipelineAvailable)
             }
 
@@ -184,13 +185,6 @@ struct ToolbarView: View {
             return L10n.Toolbar.experimentalNotAvailable(vm.lang)
         }
         return vm.alignmentQualityMode.description
-    }
-
-    private var vocalIsolationHelp: String {
-        if !vm.vocalSeparationAvailable {
-            return "Demucs not detected. Install with: pip3 install demucs"
-        }
-        return "Run demucs to isolate vocals before whisper. First run is 1–5 min; later runs hit cache."
     }
 
     private func exportVideo() {

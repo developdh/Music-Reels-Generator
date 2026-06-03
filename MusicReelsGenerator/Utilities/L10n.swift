@@ -91,6 +91,27 @@ enum L10n {
         static func aligning(_ l: UILanguage) -> String {
             switch l { case .ko: "정렬 중..."; case .en: "Aligning..."; case .ja: "整列中..." }
         }
+        static func whisperModel(_ l: UILanguage, _ m: WhisperModel, installed: Bool) -> String {
+            let base: String
+            switch m {
+            case .auto: base = switch l { case .ko: "모델: 자동"; case .en: "Model: Auto"; case .ja: "モデル: 自動" }
+            case .largeV3: base = "large-v3"
+            case .medium: base = "medium"
+            case .largeV3Turbo: base = "large-v3-turbo"
+            case .small: base = "small"
+            case .base: base = "base"
+            }
+            if m == .auto || installed { return base }
+            let na = switch l { case .ko: " (미설치)"; case .en: " (not installed)"; case .ja: " (未導入)" }
+            return base + na
+        }
+        static func whisperModelHelp(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "음성 인식 모델. large-v3가 가장 정확합니다 (turbo보다도 위). 미설치 모델은 자동 정렬 시 사용 가능한 최선 모델로 대체됩니다."
+            case .en: "Speech recognition model. large-v3 is the most accurate (above turbo). A model marked not installed falls back to the best available one when aligning."
+            case .ja: "音声認識モデル。large-v3が最も正確です (turboより上)。未導入のモデルは整列時に利用可能な最良モデルで代替されます。"
+            }
+        }
         static func export(_ l: UILanguage) -> String {
             switch l { case .ko: "내보내기"; case .en: "Export"; case .ja: "書き出し" }
         }

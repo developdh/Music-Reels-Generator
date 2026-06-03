@@ -37,25 +37,41 @@ struct WhisperSegment {
 }
 
 enum WhisperAlignmentService {
-    /// Default model search paths (ordered by preference: larger models first)
-    static var modelSearchPaths: [String] {
+    /// Directories searched for ggml model files, in priority order.
+    static var modelSearchDirs: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return [
-            "\(home)/.local/share/whisper-cpp/models/ggml-large-v3-turbo.bin",
-            "\(home)/.local/share/whisper-cpp/models/ggml-large-v3.bin",
-            "\(home)/.local/share/whisper-cpp/models/ggml-medium.bin",
-            "\(home)/.local/share/whisper-cpp/models/ggml-small.bin",
-            "\(home)/.local/share/whisper-cpp/models/ggml-base.bin",
-            "/opt/homebrew/share/whisper-cpp/models/ggml-large-v3-turbo.bin",
-            "/opt/homebrew/share/whisper-cpp/models/ggml-large-v3.bin",
-            "/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin",
-            "/usr/local/share/whisper-cpp/models/ggml-medium.bin",
-            "\(home)/whisper-models/ggml-medium.bin"
+            "\(home)/.local/share/whisper-cpp/models",
+            "/opt/homebrew/share/whisper-cpp/models",
+            "/usr/local/share/whisper-cpp/models",
+            "\(home)/whisper-models"
         ]
     }
 
+    /// Quality order used by `.auto`. large-v3 (full) is best; large-v3-turbo is a
+    /// fast distilled variant that underperforms medium on hard vocals, so it ranks
+    /// below medium (it was the previous, incorrect, top preference).
+    static let autoQualityOrder: [WhisperModel] = [.largeV3, .medium, .largeV3Turbo, .small, .base]
+
+    /// Resolve a model to an installed file path. `.auto` returns the best installed
+    /// model by quality order; an explicit model returns its file if installed, else nil.
+    static func path(for model: WhisperModel) -> String? {
+        if model == .auto {
+            return autoQualityOrder.lazy.compactMap { path(for: $0) }.first
+        }
+        guard let file = model.ggmlFilename else { return nil }
+        return modelSearchDirs
+            .map { "\($0)/\(file)" }
+            .first { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    static func isInstalled(_ model: WhisperModel) -> Bool {
+        path(for: model) != nil
+    }
+
+    /// Best installed model across all known paths (the `.auto` choice).
     static func findModel() -> String? {
-        modelSearchPaths.first { FileManager.default.fileExists(atPath: $0) }
+        path(for: .auto)
     }
 
     /// Run whisper.cpp transcription and return timestamped segments

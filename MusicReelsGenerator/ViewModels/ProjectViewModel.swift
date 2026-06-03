@@ -53,7 +53,9 @@ class ProjectViewModel: ObservableObject {
     // MARK: - Tool Availability
     @Published var ffmpegAvailable: Bool = false
     @Published var whisperAvailable: Bool = false
-    @Published var vocalSeparationAvailable: Bool = false
+    /// Explicit whisper models currently installed (drives the model picker's
+    /// "(not installed)" annotation). Refreshed in `checkToolAvailability`.
+    @Published var installedWhisperModels: Set<WhisperModel> = []
 
     // MARK: - Waveform
     @Published var waveformPeaks: [Float] = []
@@ -138,20 +140,21 @@ class ProjectViewModel: ObservableObject {
     func checkToolAvailability() {
         ffmpegAvailable = ProcessRunner.findFFmpeg() != nil
         whisperAvailable = ProcessRunner.findWhisper() != nil
-        // Check advanced pipeline and demucs off the main thread — each probe
-        // spawns Python (~0.5–1 s) and we don't want to block UI startup.
+        installedWhisperModels = Set(
+            WhisperModel.allCases.filter { $0 != .auto && WhisperAlignmentService.isInstalled($0) }
+        )
+        // Probe the advanced (Python) pipeline off the main thread — it spawns
+        // Python (~0.5–1 s) and we don't want to block UI startup.
         Task.detached {
             let advanced = AdvancedAlignmentService.isAvailable
-            let demucs = VocalSeparationService.isAvailable
             await MainActor.run { [weak self] in
                 self?.advancedPipelineAvailable = advanced
-                self?.vocalSeparationAvailable = demucs
             }
         }
     }
 
     /// Drop cached whisper segments. Call when an input that affects whisper
-    /// transcription changes (e.g. vocal isolation toggled, language switched).
+    /// transcription changes (e.g. whisper model or language switched).
     func invalidateWhisperCache() {
         if !cachedWhisperSegments.isEmpty {
             print("[Alignment] Whisper cache invalidated")
@@ -1008,6 +1011,7 @@ class ProjectViewModel: ObservableObject {
                 alignmentProgress = L10n.Status.recognizingSpeech(lang)
                 cachedWhisperSegments = try await WhisperAlignmentService.transcribe(
                     audioURL: audioURL,
+                    modelPath: WhisperAlignmentService.path(for: project.whisperModel),
                     language: project.primaryLanguage.whisperLanguageFlag
                 ) { [weak self] msg in
                     Task { @MainActor in
@@ -1060,35 +1064,12 @@ class ProjectViewModel: ObservableObject {
         }
     }
 
-    /// Produce a 16 kHz mono WAV ready for whisper.cpp, optionally running
-    /// vocal isolation (demucs) first. On vocal-isolation failure or when
-    /// demucs is unavailable, falls back to the plain extraction so alignment
-    /// still proceeds — vocal isolation is an accuracy boost, not a hard
-    /// dependency.
+    /// Produce a 16 kHz mono WAV ready for whisper.cpp.
     private func prepareWhisperAudio(
         videoURL: URL,
         audioURL: URL,
         stageLabel: String
     ) async throws {
-        let shouldIsolate = project.useVocalIsolation && vocalSeparationAvailable
-        if shouldIsolate {
-            do {
-                try await VocalSeparationService.prepareVocalAudio(
-                    fromVideo: videoURL,
-                    outputURL: audioURL
-                ) { [weak self] msg in
-                    Task { @MainActor in
-                        self?.alignmentProgress = "\(stageLabel): \(msg)"
-                    }
-                }
-                return
-            } catch {
-                print("[VocalSep] Failed, falling back to raw audio: \(error.localizedDescription)")
-                statusMessage = "Vocal separation failed, using raw audio: \(error.localizedDescription)"
-                // fall through to plain extraction
-            }
-        }
-
         try await AudioExtractionService.extractAudio(
             from: videoURL,
             to: audioURL
@@ -1141,13 +1122,10 @@ class ProjectViewModel: ObservableObject {
         }
 
         do {
-            // Stage 1: Extract (and optionally vocal-isolate) audio
+            // Stage 1: Extract audio
             var stageStart = CFAbsoluteTimeGetCurrent()
-            let stage1Label = (project.useVocalIsolation && vocalSeparationAvailable)
-                ? "Stage 1: Preparing isolated vocals..."
-                : "Stage 1: Extracting audio..."
-            alignmentProgress = stage1Label
-            print("[Alignment] Stage 1: \(project.useVocalIsolation && vocalSeparationAvailable ? "Vocal-isolated audio prep" : "Audio extraction") starting")
+            alignmentProgress = "Stage 1: Extracting audio..."
+            print("[Alignment] Stage 1: Audio extraction starting")
 
             let tempDir = NSTemporaryDirectory()
             let audioURL = URL(fileURLWithPath: tempDir + "audio_\(project.id.uuidString).wav")
@@ -1195,6 +1173,7 @@ class ProjectViewModel: ObservableObject {
                 }
                 let segments = try await WhisperAlignmentService.transcribe(
                     audioURL: audioURL,
+                    modelPath: WhisperAlignmentService.path(for: project.whisperModel),
                     language: project.primaryLanguage.whisperLanguageFlag
                 ) { [weak self] msg in
                     Task { @MainActor in
