@@ -85,6 +85,23 @@ struct BlockInspectorView: View {
                             .controlSize(.mini)
                         }
 
+                        if block.hasTimingData, !vm.waveformPeaks.isEmpty {
+                            BlockTimingWaveformView(
+                                peaks: vm.waveformPeaks,
+                                duration: vm.duration,
+                                blockStart: block.startTime ?? 0,
+                                blockEnd: block.endTime ?? 0,
+                                currentTime: vm.currentTime,
+                                onSetStart: { vm.updateBlock(id: block.id, startTime: $0) },
+                                onSetEnd: { vm.updateBlock(id: block.id, endTime: $0) },
+                                onSeek: { vm.seek(to: $0) }
+                            )
+                            .frame(height: 52)
+                            Text(L10n.Block.waveformHint(vm.lang))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+
                         if let confidence = block.confidence {
                             HStack {
                                 Text(L10n.Block.confidence(vm.lang))

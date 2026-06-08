@@ -195,6 +195,13 @@ enum L10n {
         static func setNow(_ l: UILanguage) -> String {
             switch l { case .ko: "현재 설정"; case .en: "Set Now"; case .ja: "現在位置に設定" }
         }
+        static func waveformHint(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "핸들을 드래그해 타이밍 조정 (초록=시작, 빨강=끝) · 빈 곳 클릭=이동"
+            case .en: "Drag handles to set timing (green = start, red = end) · click elsewhere to seek"
+            case .ja: "ハンドルをドラッグしてタイミング調整 (緑=開始, 赤=終了) · 空白クリックでシーク"
+            }
+        }
         static func confidence(_ l: UILanguage) -> String {
             switch l { case .ko: "신뢰도:"; case .en: "Confidence:"; case .ja: "信頼度:" }
         }
