@@ -100,6 +100,12 @@ class ProjectViewModel: ObservableObject {
         }
     }
 
+    /// Number of blocks that still need attention — low recognition confidence and
+    /// not yet manually corrected. Drives the lyric-list "weak" summary chip.
+    var lowConfidenceBlockCount: Int {
+        project.lyricBlocks.filter { $0.isLowConfidence && !$0.isManuallyAdjusted }.count
+    }
+
     // MARK: - Initialization
 
     init() {
@@ -533,6 +539,22 @@ class ProjectViewModel: ObservableObject {
     func setEndTimeToCurrent() {
         guard let id = selectedBlockID else { return }
         updateBlock(id: id, endTime: currentTime)
+    }
+
+    /// Nudge a block's own start time by `delta` seconds (fine manual correction).
+    /// Reuses `updateBlock`, so it marks the start manually-adjusted, coalesces
+    /// rapid nudges into one undo step, and clamps at 0.
+    func nudgeBlockStart(id: UUID, by delta: Double) {
+        guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }),
+              let cur = project.lyricBlocks[idx].startTime else { return }
+        updateBlock(id: id, startTime: max(0, cur + delta))
+    }
+
+    /// Nudge a block's own end time by `delta` seconds.
+    func nudgeBlockEnd(id: UUID, by delta: Double) {
+        guard let idx = project.lyricBlocks.firstIndex(where: { $0.id == id }),
+              let cur = project.lyricBlocks[idx].endTime else { return }
+        updateBlock(id: id, endTime: max(0, cur + delta))
     }
 
     /// Shift all blocks from the selected block onward by a delta

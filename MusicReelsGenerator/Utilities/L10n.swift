@@ -835,6 +835,16 @@ enum L10n {
         static func blocks(_ l: UILanguage, count: Int) -> String {
             switch l { case .ko: "\(count) 블록"; case .en: "\(count) blocks"; case .ja: "\(count) ブロック" }
         }
+        static func weakCount(_ l: UILanguage, count: Int) -> String {
+            switch l { case .ko: "⚠ 약함 \(count)"; case .en: "⚠ \(count) weak"; case .ja: "⚠ 弱 \(count)" }
+        }
+        static func weakCountHelp(_ l: UILanguage) -> String {
+            switch l {
+            case .ko: "인식 신뢰도가 낮아 수동 보정이 필요한 블록 수. 목록 왼쪽 색 막대로 위치를 확인하세요 (빨강<40% · 주황<70% · 초록 양호 · 파랑 수동)."
+            case .en: "Blocks with low recognition confidence that likely need manual correction. The colored bar on each row marks them (red <40% · orange <70% · green good · blue manual)."
+            case .ja: "認識信頼度が低く手動補正が必要なブロック数。各行左の色バーで位置を確認できます (赤<40% · 橙<70% · 緑 良好 · 青 手動)。"
+            }
+        }
         static func pasteEdit(_ l: UILanguage) -> String {
             switch l { case .ko: "가사 붙여넣기/편집"; case .en: "Paste/Edit Lyrics"; case .ja: "歌詞を貼り付け/編集" }
         }

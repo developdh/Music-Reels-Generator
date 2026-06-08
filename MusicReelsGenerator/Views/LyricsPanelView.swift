@@ -16,6 +16,12 @@ struct LyricsPanelView: View {
                 Text(L10n.Lyrics.blocks(vm.lang, count: vm.project.lyricBlocks.count))
                     .font(.caption)
                     .foregroundColor(.secondary)
+                if vm.lowConfidenceBlockCount > 0 {
+                    Text(L10n.Lyrics.weakCount(vm.lang, count: vm.lowConfidenceBlockCount))
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .help(L10n.Lyrics.weakCountHelp(vm.lang))
+                }
                 Menu {
                     Button(L10n.Lyrics.pasteEdit(vm.lang)) {
                         if !vm.project.lyricBlocks.isEmpty {
@@ -122,6 +128,16 @@ struct LyricBlockRow: View {
     let index: Int
     let isActive: Bool
 
+    /// Confidence-band color for the leading heatmap bar (matches ConfidenceBadge):
+    /// blue = manual, green ≥0.7, orange ≥0.4, red < 0.4, grey = unmatched/no timing.
+    private var bandColor: Color {
+        if block.isManuallyAdjusted { return .blue }
+        guard let c = block.confidence else { return Color.gray.opacity(0.5) }
+        if c >= 0.7 { return .green }
+        if c >= 0.4 { return .orange }
+        return .red
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -174,10 +190,13 @@ struct LyricBlockRow: View {
             RoundedRectangle(cornerRadius: 4)
                 .fill(isActive ? Color.accentColor.opacity(0.15) : Color.clear)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(block.isLowConfidence && !block.isManuallyAdjusted ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1)
-        )
+        .overlay(alignment: .leading) {
+            // Confidence heatmap bar — lets you scan the list for weak blocks.
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(bandColor)
+                .frame(width: 3)
+                .padding(.vertical, 2)
+        }
     }
 }
 

@@ -46,6 +46,17 @@ struct BlockInspectorView: View {
                             .controlSize(.small)
                         }
 
+                        if block.startTime != nil {
+                            HStack(spacing: 2) {
+                                Spacer()
+                                Button("-1s") { vm.nudgeBlockStart(id: block.id, by: -1) }
+                                Button("-0.1") { vm.nudgeBlockStart(id: block.id, by: -0.1) }
+                                Button("+0.1") { vm.nudgeBlockStart(id: block.id, by: 0.1) }
+                                Button("+1s") { vm.nudgeBlockStart(id: block.id, by: 1) }
+                            }
+                            .controlSize(.mini)
+                        }
+
                         HStack {
                             Text(L10n.Block.end(vm.lang))
                                 .frame(width: 40, alignment: .trailing)
@@ -61,6 +72,17 @@ struct BlockInspectorView: View {
                                 vm.setEndTimeToCurrent()
                             }
                             .controlSize(.small)
+                        }
+
+                        if block.endTime != nil {
+                            HStack(spacing: 2) {
+                                Spacer()
+                                Button("-1s") { vm.nudgeBlockEnd(id: block.id, by: -1) }
+                                Button("-0.1") { vm.nudgeBlockEnd(id: block.id, by: -0.1) }
+                                Button("+0.1") { vm.nudgeBlockEnd(id: block.id, by: 0.1) }
+                                Button("+1s") { vm.nudgeBlockEnd(id: block.id, by: 1) }
+                            }
+                            .controlSize(.mini)
                         }
 
                         if let confidence = block.confidence {
