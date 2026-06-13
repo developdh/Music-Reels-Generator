@@ -103,6 +103,34 @@ enum SubtitleRenderer {
             width: maxTextWidth, height: jaSize.height + 10
         )
 
+        // --- Background box pass (behind text) ---
+        if style.backgroundEnabled {
+            let padX = CGFloat(style.backgroundPaddingX)
+            let padY = CGFloat(style.backgroundPaddingY)
+            // Wrap the actual (centered) text extent, not the full max width.
+            let contentWidth = max(jaSize.width, hasSecondary ? koSize.width : 0)
+            let contentHeight: CGFloat = hasSecondary
+                ? (koSize.height + style.lineSpacing + jaSize.height)
+                : jaSize.height
+            // Text is drawn at the TOP of each draw-rect (rects are textHeight + 10
+            // tall in this bottom-left context), so the lowest glyph row sits ~10pt
+            // above bottomMargin. Offset the box up by that fudge so padding is
+            // symmetric around the visible text.
+            let textBottom = style.bottomMargin + 10
+            let boxRect = NSRect(
+                x: (canvasSize.width - contentWidth) / 2 - padX,
+                y: textBottom - padY,
+                width: contentWidth + padX * 2,
+                height: contentHeight + padY * 2
+            )
+            let bgColor = NSColor(Color(hex: style.backgroundColorHex))
+                .withAlphaComponent(style.backgroundOpacity)
+            let radius = CGFloat(style.backgroundCornerRadius)
+            let boxPath = NSBezierPath(roundedRect: boxRect, xRadius: radius, yRadius: radius)
+            bgColor.setFill()
+            boxPath.fill()
+        }
+
         // --- Outline pass ---
         let outlineJaAttrs: [NSAttributedString.Key: Any] = [
             .font: jaFont,

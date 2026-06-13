@@ -13,9 +13,20 @@ struct SubtitleStyle: Equatable {
     var shadowEnabled: Bool = true
     var bottomMargin: Double = 200
     var lineSpacing: Double = 10
+    // Background box / scrim behind the subtitle text (readability over busy video)
+    var backgroundEnabled: Bool = false
+    var backgroundColorHex: String = "#000000"
+    var backgroundOpacity: Double = 0.5
+    var backgroundCornerRadius: Double = 14
+    var backgroundPaddingX: Double = 28
+    var backgroundPaddingY: Double = 14
 
     var japaneseTextColor: Color {
         Color(hex: japaneseTextColorHex)
+    }
+
+    var backgroundColor: Color {
+        Color(hex: backgroundColorHex)
     }
 
     var koreanTextColor: Color {
@@ -35,6 +46,8 @@ extension SubtitleStyle: Codable {
         case textColorHex // legacy single color
         case outlineColorHex, outlineWidth, shadowEnabled
         case bottomMargin, lineSpacing
+        case backgroundEnabled, backgroundColorHex, backgroundOpacity
+        case backgroundCornerRadius, backgroundPaddingX, backgroundPaddingY
     }
 
     init(from decoder: Decoder) throws {
@@ -48,6 +61,12 @@ extension SubtitleStyle: Codable {
         shadowEnabled = try c.decodeIfPresent(Bool.self, forKey: .shadowEnabled) ?? true
         bottomMargin = try c.decodeIfPresent(Double.self, forKey: .bottomMargin) ?? 200
         lineSpacing = try c.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 10
+        backgroundEnabled = try c.decodeIfPresent(Bool.self, forKey: .backgroundEnabled) ?? false
+        backgroundColorHex = try c.decodeIfPresent(String.self, forKey: .backgroundColorHex) ?? "#000000"
+        backgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? 0.5
+        backgroundCornerRadius = try c.decodeIfPresent(Double.self, forKey: .backgroundCornerRadius) ?? 14
+        backgroundPaddingX = try c.decodeIfPresent(Double.self, forKey: .backgroundPaddingX) ?? 28
+        backgroundPaddingY = try c.decodeIfPresent(Double.self, forKey: .backgroundPaddingY) ?? 14
 
         // Migration: if new per-language keys exist, use them; otherwise fall back to legacy single color
         if let jaHex = try c.decodeIfPresent(String.self, forKey: .japaneseTextColorHex) {
@@ -73,5 +92,11 @@ extension SubtitleStyle: Codable {
         try c.encode(shadowEnabled, forKey: .shadowEnabled)
         try c.encode(bottomMargin, forKey: .bottomMargin)
         try c.encode(lineSpacing, forKey: .lineSpacing)
+        try c.encode(backgroundEnabled, forKey: .backgroundEnabled)
+        try c.encode(backgroundColorHex, forKey: .backgroundColorHex)
+        try c.encode(backgroundOpacity, forKey: .backgroundOpacity)
+        try c.encode(backgroundCornerRadius, forKey: .backgroundCornerRadius)
+        try c.encode(backgroundPaddingX, forKey: .backgroundPaddingX)
+        try c.encode(backgroundPaddingY, forKey: .backgroundPaddingY)
     }
 }

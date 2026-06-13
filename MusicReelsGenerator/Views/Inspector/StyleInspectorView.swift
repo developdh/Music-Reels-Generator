@@ -123,6 +123,56 @@ struct StyleInspectorView: View {
                 }
             }
 
+            GroupBox(L10n.Style.background(vm.lang)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(L10n.Style.backgroundEnabled(vm.lang),
+                           isOn: $vm.project.subtitleStyle.backgroundEnabled)
+
+                    if vm.project.subtitleStyle.backgroundEnabled {
+                        SubtitleColorPicker(
+                            label: "Color:",
+                            hexColor: $vm.project.subtitleStyle.backgroundColorHex
+                        )
+
+                        HStack {
+                            Text(L10n.Style.opacity(vm.lang))
+                                .frame(width: 52, alignment: .trailing)
+                            Slider(value: $vm.project.subtitleStyle.backgroundOpacity, in: 0...1, step: 0.05)
+                            Text("\(Int(vm.project.subtitleStyle.backgroundOpacity * 100))%")
+                                .monospacedDigit()
+                                .frame(width: 36)
+                        }
+
+                        HStack {
+                            Text(L10n.Style.radius(vm.lang))
+                                .frame(width: 52, alignment: .trailing)
+                            Slider(value: $vm.project.subtitleStyle.backgroundCornerRadius, in: 0...60, step: 1)
+                            Text("\(Int(vm.project.subtitleStyle.backgroundCornerRadius))")
+                                .monospacedDigit()
+                                .frame(width: 32)
+                        }
+
+                        HStack {
+                            Text(L10n.Style.padX(vm.lang))
+                                .frame(width: 52, alignment: .trailing)
+                            Slider(value: $vm.project.subtitleStyle.backgroundPaddingX, in: 0...120, step: 2)
+                            Text("\(Int(vm.project.subtitleStyle.backgroundPaddingX))")
+                                .monospacedDigit()
+                                .frame(width: 32)
+                        }
+
+                        HStack {
+                            Text(L10n.Style.padY(vm.lang))
+                                .frame(width: 52, alignment: .trailing)
+                            Slider(value: $vm.project.subtitleStyle.backgroundPaddingY, in: 0...80, step: 2)
+                            Text("\(Int(vm.project.subtitleStyle.backgroundPaddingY))")
+                                .monospacedDigit()
+                                .frame(width: 32)
+                        }
+                    }
+                }
+            }
+
             GroupBox(L10n.Style.position(vm.lang)) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {

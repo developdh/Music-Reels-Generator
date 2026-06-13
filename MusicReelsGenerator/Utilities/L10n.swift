@@ -473,6 +473,24 @@ enum L10n {
         static func shadow(_ l: UILanguage) -> String {
             switch l { case .ko: "그림자"; case .en: "Shadow"; case .ja: "シャドウ" }
         }
+        static func background(_ l: UILanguage) -> String {
+            switch l { case .ko: "배경 박스"; case .en: "Background Box"; case .ja: "背景ボックス" }
+        }
+        static func backgroundEnabled(_ l: UILanguage) -> String {
+            switch l { case .ko: "자막 뒤 배경 표시"; case .en: "Show background behind text"; case .ja: "テキスト背景を表示" }
+        }
+        static func opacity(_ l: UILanguage) -> String {
+            switch l { case .ko: "불투명:"; case .en: "Opacity:"; case .ja: "不透明度:" }
+        }
+        static func radius(_ l: UILanguage) -> String {
+            switch l { case .ko: "모서리:"; case .en: "Radius:"; case .ja: "角丸:" }
+        }
+        static func padX(_ l: UILanguage) -> String {
+            switch l { case .ko: "가로 여백:"; case .en: "Pad X:"; case .ja: "横余白:" }
+        }
+        static func padY(_ l: UILanguage) -> String {
+            switch l { case .ko: "세로 여백:"; case .en: "Pad Y:"; case .ja: "縦余白:" }
+        }
         static func position(_ l: UILanguage) -> String {
             switch l { case .ko: "위치"; case .en: "Position"; case .ja: "位置" }
         }
