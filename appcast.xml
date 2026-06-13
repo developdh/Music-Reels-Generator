@@ -6,12 +6,12 @@
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
         <item>
-            <title>Version 1.25.0</title>
-            <pubDate>Mon, 08 Jun 2026 22:59:32 +0900</pubDate>
+            <title>Version 1.26.0</title>
+            <pubDate>Sat, 13 Jun 2026 14:16:55 +0900</pubDate>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure
-                url="https://github.com/developdh/Music-Reels-Generator/releases/download/v1.25.0/MusicReelsGenerator-1.25.0.zip"
-                sparkle:edSignature="/Lk20k4FdQG+c9gxm60MwdS1Lhfph8G3BG5GkWuRzewO13198Oyxde2ZHnGjKEddfyaHR9t2oYYmJ6ufpMckAA==" length="3051636"
+                url="https://github.com/developdh/Music-Reels-Generator/releases/download/v1.26.0/MusicReelsGenerator-1.26.0.zip"
+                sparkle:edSignature="YwW3xtTqcBOFD5M+iOVqwaC2xK8jdyBHxUKb/ZKqTKqclNbwTbIoOrO+awVS83igqJNx/ErYlNl2AtUp5tytCw==" length="3061007"
                 type="application/octet-stream"
             />
         </item>
